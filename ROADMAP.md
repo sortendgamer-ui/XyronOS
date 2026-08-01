@@ -8,7 +8,7 @@ the detailed history behind each checkmark.
 | Phase | Name | Status |
 |-------|------|--------|
 | 1 | Requirements, Vision, Architecture, Boot/Memory Design | ✅ Complete & frozen |
-| 2 | Bootloader (UEFI, disk loader, boot menu) | 🔵 In progress (Part 1/4) |
+| 2 | Bootloader (UEFI, disk loader, boot menu) | 🔵 In progress (Part 2/4) |
 | 3 | Kernel (scheduler, memory manager, interrupts, syscalls, timers) | ⬜ Not started |
 | 4 | Device Drivers | ⬜ Not started |
 | 5 | File System | ⬜ Not started |
@@ -31,7 +31,7 @@ the detailed history behind each checkmark.
 ## Phase 2 breakdown (current)
 
 - [x] Part 1 — Minimal UEFI PE32+ "hello world," verified booting in QEMU/OVMF
-- [ ] Part 2 — Full Boot Services table + Simple File System Protocol reader
+- [x] Part 2 — Full Boot Services table + Simple File System Protocol reader, verified reading a real file end to end
 - [ ] Part 3 — Memory map retrieval + `ExitBootServices`
 - [ ] Part 4 — Kernel image loading + handoff struct + jump to kernel
 

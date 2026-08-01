@@ -6,12 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
-### Planned (Phase 2, Parts 2-4)
-- Full `EFI_BOOT_SERVICES` table definition.
-- Simple File System Protocol reader (own FAT parsing, no firmware
-  FAT driver dependency beyond the standard protocol interface).
+### Planned (Phase 2, Parts 3-4)
 - Memory map retrieval and `ExitBootServices` handoff.
 - Kernel image loading and jump-to-kernel handoff struct.
+
+## [v0.0.2-alpha] - 2026-07-31
+### Added
+- `docs/adr/ADR-003-bootloader-file-io.md` — decision to use
+  `EFI_SIMPLE_FILE_SYSTEM_PROTOCOL` for all bootloader file I/O rather
+  than writing an own FAT12/16/32 parser.
+- `boot/include/efi_boot_services.h` — full `EFI_BOOT_SERVICES` function
+  table (44 entries), spec-accurate field order and signatures.
+- `boot/include/efi_loaded_image_protocol.h` — `EFI_LOADED_IMAGE_PROTOCOL`,
+  used to discover the bootloader's own source volume.
+- `boot/include/efi_file_protocol.h` — `EFI_SIMPLE_FILE_SYSTEM_PROTOCOL`
+  and `EFI_FILE_PROTOCOL` definitions.
+- `boot/testdata/BOOTINFO.TXT` — test fixture proving the file-read
+  pipeline end to end.
+### Changed
+- `boot/main.c` — now acquires `LoadedImageProtocol` →
+  `SimpleFileSystemProtocol` → opens root volume → opens, reads, and
+  prints a test file's contents. Verified byte-for-byte correct under
+  QEMU/OVMF.
+- `.github/workflows/qemu-boot-test.yml`, `.github/workflows/release.yml`
+  — updated to stage the test file on the ESP and assert on the Part 2
+  success marker.
 
 ## [v0.0.1-alpha] - 2026-07-31
 ### Added

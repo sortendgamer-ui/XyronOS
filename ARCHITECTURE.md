@@ -53,6 +53,10 @@ can see how the pieces fit together before diving into individual records.
   `0xFFFFFFFF80000000`, direct physical map at `0xFFFF800000000000`, user
   space in the low 128 TiB half. Single page-table set per process, no
   swap on syscall entry.
+- **ADR-003 — Bootloader file I/O:** reads files off the ESP via
+  `EFI_SIMPLE_FILE_SYSTEM_PROTOCOL` (firmware's own FAT driver, accessed
+  through the standard UEFI protocol interface) rather than writing a
+  bootloader-owned FAT12/16/32 parser.
 
 ## Component boundaries
 

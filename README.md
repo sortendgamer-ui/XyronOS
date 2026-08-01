@@ -6,16 +6,19 @@ with external standards (x86_64 architecture, UEFI, ACPI, USB, PCIe), we
 implement those *specifications* independently from their public
 documentation, never from an existing reference implementation.
 
-Current status: **Phase 2 (Bootloader), Part 1 of ~4 complete.** See
+Current status: **Phase 2 (Bootloader), Part 2 of ~4 complete.** See
 [ROADMAP.md](ROADMAP.md) for the full phase plan and
 [CHANGELOG.md](CHANGELOG.md) for what has actually landed.
 
 ## What exists right now
 
-A minimal UEFI PE32+ bootloader that boots under OVMF/QEMU, prints a
-confirmation message to the console, and halts. This is a genuine,
-verified checkpoint — not a placeholder — see
-[docs/adr](docs/adr) for the architecture decisions behind it.
+A UEFI PE32+ bootloader that boots under OVMF/QEMU and reads a real
+file off the boot volume via the Simple File System Protocol —
+`LoadedImageProtocol → SimpleFileSystemProtocol → OpenVolume → Open →
+GetInfo → AllocatePool → Read` — printing its contents to the console
+to prove the pipeline end to end. This is a genuine, verified
+checkpoint — not a placeholder — see [docs/adr](docs/adr) for the
+architecture decisions behind it.
 
 ## Quick start
 
@@ -29,6 +32,7 @@ cd boot && make
 # 3. Boot-test it in QEMU
 mkdir -p ../build/esp/EFI/BOOT
 cp ../build/BOOTX64.EFI ../build/esp/EFI/BOOT/BOOTX64.EFI
+cp testdata/BOOTINFO.TXT ../build/esp/BOOTINFO.TXT
 cp /usr/share/OVMF/OVMF_CODE_4M.fd ../build/OVMF_CODE.fd
 cp /usr/share/OVMF/OVMF_VARS_4M.fd ../build/OVMF_VARS.fd
 qemu-system-x86_64 -machine q35 -m 256M \
