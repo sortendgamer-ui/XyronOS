@@ -1,21 +1,19 @@
 /*
- * main.c — Bootloader entry point, Phase 2 Part 2.
+ * main.c — Bootloader entry point, Phase 2 Part 3.
  *
- * Part 1 proved the toolchain, struct layout, and entry point were all
- * correct by printing to the console and halting. Part 2 proves the
- * file-I/O path works: from our own image handle, find the volume we
- * were loaded from, open its root directory, open a test file, read
- * its contents into a heap buffer, and print them. Every step here is
- * exactly what Part 4 will do again to load the real kernel image —
- * this part exists so that when Part 4 does it for the kernel, the
- * file-I/O plumbing itself is already verified working, and a Part 4
- * failure can only mean a kernel-loading-specific bug, not a protocol
- * bug.
+ * Parts 1-2 (unchanged below) proved the toolchain/struct layout and
+ * the file-I/O pipeline. Part 3 adds the single most consequential
+ * step a UEFI bootloader ever takes: retrieving the final memory map
+ * and calling ExitBootServices, the point of no return after which
+ * firmware's own services (including, in general, ConOut) can no
+ * longer be relied upon. See memory_map.c for why this requires a
+ * retry loop rather than one call, and ADR-004 for why a raw serial
+ * driver exists to confirm success afterward.
  *
  * What this program deliberately does NOT do yet:
- *   - Call GetMemoryMap / ExitBootServices (Part 3)
  *   - Load an actual kernel or jump to it (Part 4 — no kernel exists
- *     until Phase 3 begins)
+ *     until Phase 3 begins). The memory map captured here is exactly
+ *     what Part 4 will hand off to the kernel once one exists.
  */
 
 #include "include/efi_types.h"
@@ -23,16 +21,13 @@
 #include "include/efi_boot_services.h"
 #include "include/efi_loaded_image_protocol.h"
 #include "include/efi_file_protocol.h"
+#include "include/memory_map.h"
+#include "include/serial.h"
 
 /*
  * PrintAscii — convert and print a narrow (CHAR8/ASCII) buffer through
  * the UEFI console, which only accepts CHAR16 (UCS-2) strings.
- *
- * This exists because the test file we read is plain ASCII text on
- * disk, but EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL->OutputString requires a
- * null-terminated CHAR16 string. We convert in small fixed-size chunks
- * on the stack rather than allocating a second full-size heap buffer,
- * since the conversion buffer's lifetime is only this function call.
+ * Unchanged from Part 2.
  */
 static void PrintAscii(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *ConOut,
                         CHAR8 *buffer, UINTN length)
@@ -41,18 +36,12 @@ static void PrintAscii(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *ConOut,
     UINTN chunkLen = 0;
 
     for (UINTN i = 0; i < length; i++) {
-        /* Firmware's console expects CR before LF for correct
-         * positioning, same as the string literals elsewhere in this
-         * file — translate bare '\n' from the text file accordingly. */
         if (buffer[i] == '\n' && (chunkLen == 0 || chunk[chunkLen - 1] != L'\r')) {
             chunk[chunkLen++] = L'\r';
         }
 
         chunk[chunkLen++] = (CHAR16)buffer[i];
 
-        /* Flush when the chunk buffer is nearly full (leave room for a
-         * null terminator plus one more possible \r\n pair) or when
-         * this is the last byte of input. */
         if (chunkLen >= 125 || i == length - 1) {
             chunk[chunkLen] = 0;
             ConOut->OutputString(ConOut, chunk);
@@ -66,17 +55,14 @@ EFI_STATUS EFIAPI EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *ConOut = SystemTable->ConOut;
     EFI_BOOT_SERVICES *BS = SystemTable->BootServices;
     EFI_STATUS status;
+    BOOLEAN part2Success = FALSE;
 
     ConOut->ClearScreen(ConOut);
-    ConOut->OutputString(ConOut, L"XyronOS Bootloader \x2014 Phase 2, Part 2\r\n");
+    ConOut->OutputString(ConOut, L"XyronOS Bootloader \x2014 Phase 2, Part 3\r\n");
     ConOut->OutputString(ConOut, L"Testing Simple File System read pipeline...\r\n\r\n");
 
-    /* Step 1: get our own EFI_LOADED_IMAGE_PROTOCOL so we know which
-     * volume (DeviceHandle) we were loaded from. HandleProtocol is the
-     * simplest correct call here — we are not a driver managing a
-     * controller relationship, so the extra bookkeeping OpenProtocol
-     * offers (AgentHandle/ControllerHandle/Attributes) has no benefit
-     * for this one-shot lookup. */
+    /* ===================== Part 2 (unchanged) ===================== */
+
     EFI_GUID loadedImageGuid = EFI_LOADED_IMAGE_PROTOCOL_GUID;
     EFI_LOADED_IMAGE_PROTOCOL *loadedImage = 0;
 
@@ -87,9 +73,6 @@ EFI_STATUS EFIAPI EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     }
     ConOut->OutputString(ConOut, L"[OK] LoadedImageProtocol acquired.\r\n");
 
-    /* Step 2: get the Simple File System Protocol installed on that
-     * same device handle — this is the firmware's FAT driver for the
-     * volume we booted from. */
     EFI_GUID sfspGuid = EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID;
     EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *sfsp = 0;
 
@@ -100,7 +83,6 @@ EFI_STATUS EFIAPI EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     }
     ConOut->OutputString(ConOut, L"[OK] SimpleFileSystemProtocol acquired.\r\n");
 
-    /* Step 3: open the volume's root directory. */
     EFI_FILE_PROTOCOL *root = 0;
     status = sfsp->OpenVolume(sfsp, &root);
     if (EFI_ERROR(status)) {
@@ -109,8 +91,6 @@ EFI_STATUS EFIAPI EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     }
     ConOut->OutputString(ConOut, L"[OK] Root directory opened.\r\n");
 
-    /* Step 4: open the test file. Path is relative to the volume
-     * root and uses backslashes, per FAT/UEFI path convention. */
     EFI_FILE_PROTOCOL *testFile = 0;
     status = root->Open(root, &testFile, L"\\BOOTINFO.TXT",
                          EFI_FILE_MODE_READ, 0);
@@ -121,20 +101,9 @@ EFI_STATUS EFIAPI EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     }
     ConOut->OutputString(ConOut, L"[OK] \\BOOTINFO.TXT opened.\r\n");
 
-    /* Step 5: query the file's size via GetInfo before reading, so we
-     * allocate exactly the right buffer instead of guessing. GetInfo's
-     * two-call pattern (call once with a too-small buffer to learn the
-     * required size, then again with a correctly sized one) is the
-     * standard UEFI idiom for variable-sized data — EFI_FILE_INFO's
-     * FileName field can be any length, so its total size is not
-     * knowable at compile time. */
     EFI_GUID fileInfoGuid = EFI_FILE_INFO_ID;
     UINTN infoSize = 0;
     testFile->GetInfo(testFile, &fileInfoGuid, &infoSize, 0);
-    /* First call is expected to return EFI_BUFFER_TOO_SMALL and fill in
-     * infoSize; we deliberately ignore its status and only use the
-     * size it reported, since a zero infoSize after this call would
-     * still be caught by the AllocatePool failure path below. */
 
     EFI_FILE_INFO *fileInfo = 0;
     status = BS->AllocatePool(EfiLoaderData, infoSize, (VOID **)&fileInfo);
@@ -150,9 +119,6 @@ EFI_STATUS EFIAPI EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     }
     ConOut->OutputString(ConOut, L"[OK] File size obtained.\r\n");
 
-    /* Step 6: allocate a buffer for the file's contents and read it in
-     * one call. UINTN FileSize is documented (Spec 13.5) to be the
-     * file's size in bytes for a non-directory file. */
     UINTN fileDataSize = (UINTN)fileInfo->FileSize;
     CHAR8 *fileData = 0;
 
@@ -170,18 +136,12 @@ EFI_STATUS EFIAPI EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     ConOut->OutputString(ConOut, L"[OK] File read into memory. Contents:\r\n");
     ConOut->OutputString(ConOut, L"------------------------------------------------------------\r\n");
 
-    /* Step 7: print what we read, proving the bytes on disk actually
-     * made it into memory correctly. */
     PrintAscii(ConOut, fileData, fileDataSize);
 
     ConOut->OutputString(ConOut, L"------------------------------------------------------------\r\n");
     ConOut->OutputString(ConOut, L"[OK] Part 2 file-read pipeline verified successfully.\r\n");
+    part2Success = TRUE;
 
-    /* Step 8: clean up. Even though the whole program is about to halt
-     * (and Part 3's ExitBootServices will eventually make all of this
-     * moot for the final kernel handoff), a bootloader that leaves
-     * every resource dangling is bad practice we don't want to carry
-     * forward as a habit into later, longer-lived parts. */
 freeData:
     BS->FreePool(fileData);
 freeInfo:
@@ -189,8 +149,90 @@ freeInfo:
 closeFile:
     testFile->Close(testFile);
 
+    if (!part2Success) {
+        goto halt;
+    }
+
+    /* ===================== Part 3 (new) ============================
+     * Only reached if Part 2 fully succeeded — an early file-I/O
+     * failure has no bearing on whether memory-map/exit logic works,
+     * so there is no reason to exercise it on a run that already
+     * failed for an unrelated reason. */
+
+    ConOut->OutputString(ConOut, L"\r\nXyronOS Bootloader \x2014 Phase 2, Part 3\r\n");
+    ConOut->OutputString(ConOut, L"Preparing to retrieve the memory map and exit Boot Services...\r\n");
+    ConOut->OutputString(ConOut, L"(No further ConOut output is guaranteed valid after this point,\r\n");
+    ConOut->OutputString(ConOut, L" per the UEFI specification. Remaining output goes to COM1.)\r\n");
+
+    BOOT_MEMORY_MAP memMap;
+    BOOLEAN exited = ExitBootServicesWithRetry(SystemTable, ImageHandle, &memMap);
+
+    if (!exited) {
+        /* Boot Services are still active in this branch (we never
+         * reached a successful ExitBootServices call), so ConOut is
+         * still safe to use here. */
+        ConOut->OutputString(ConOut, L"FAILED: ExitBootServices did not succeed within the retry budget.\r\n");
+        goto halt;
+    }
+
+    /* -------------------------------------------------------------
+     * Boot Services no longer exist. From this line onward, no
+     * EFI_BOOT_SERVICES function — including anything reached through
+     * ConOut — may be called. All further output uses the raw COM1
+     * driver from serial.c/serial.h (see ADR-004).
+     * ------------------------------------------------------------- */
+
+    SerialInit();
+    SerialWriteString("\r\nXyronOS Bootloader - Phase 2 Part 3\r\n");
+    SerialWriteString("ExitBootServices succeeded. Boot Services have been terminated.\r\n");
+    SerialWriteString("This message was written directly to COM1 (I/O port 0x3F8),\r\n");
+    SerialWriteString("with no firmware services involved, proving the exit was real.\r\n\r\n");
+
+    SerialWriteString("Final memory map:\r\n");
+    SerialWriteString("  Entry count      : ");
+    SerialWriteHex64((UINT64)memMap.EntryCount);
+    SerialWriteString("\r\n  Descriptor size  : ");
+    SerialWriteHex64((UINT64)memMap.DescriptorSize);
+    SerialWriteString(" bytes\r\n  Descriptor ver.  : ");
+    SerialWriteHex64((UINT64)memMap.DescriptorVersion);
+    SerialWriteString("\r\n");
+
+    /* Walk the map and sum EfiConventionalMemory (immediately usable)
+     * pages, as a concrete proof the captured map is real and
+     * correctly structured. Iteration uses memMap.DescriptorSize as
+     * the per-entry stride, NOT sizeof(EFI_MEMORY_DESCRIPTOR) — the
+     * spec explicitly allows firmware to report a larger descriptor
+     * size than our struct definition (to reserve room for future
+     * spec fields), and assuming they are equal is a well-known UEFI
+     * programming bug this code deliberately avoids. */
+    UINT64 usablePages = 0;
+    UINT8 *cursor = (UINT8 *)memMap.Map;
+    for (UINTN i = 0; i < memMap.EntryCount; i++) {
+        EFI_MEMORY_DESCRIPTOR *desc = (EFI_MEMORY_DESCRIPTOR *)cursor;
+        if (desc->Type == EfiConventionalMemory) {
+            usablePages += desc->NumberOfPages;
+        }
+        cursor += memMap.DescriptorSize;
+    }
+
+    /* Each page is 4 KiB per the UEFI/x86_64 architecture definition. */
+    UINT64 usableMiB = (usablePages * 4096) / (1024 * 1024);
+
+    SerialWriteString("  Usable (Conventional) pages : ");
+    SerialWriteHex64(usablePages);
+    SerialWriteString("\r\n  Usable (Conventional) MiB   : ");
+    SerialWriteHex64(usableMiB);
+    SerialWriteString("\r\n\r\n");
+
+    SerialWriteString("Part 3 complete: memory map retrieved and Boot Services exited cleanly.\r\n");
+    SerialWriteString("Halting (Part 4 will load the kernel and hand off this memory map).\r\n");
+
+    for (;;) {
+        __asm__ __volatile__("hlt");
+    }
+
 halt:
-    ConOut->OutputString(ConOut, L"\r\nHalting (Part 2 has no further tasks).\r\n");
+    ConOut->OutputString(ConOut, L"\r\nHalting.\r\n");
     for (;;) {
         __asm__ __volatile__("hlt");
     }

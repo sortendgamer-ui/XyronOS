@@ -6,17 +6,19 @@ with external standards (x86_64 architecture, UEFI, ACPI, USB, PCIe), we
 implement those *specifications* independently from their public
 documentation, never from an existing reference implementation.
 
-Current status: **Phase 2 (Bootloader), Part 2 of ~4 complete.** See
+Current status: **Phase 2 (Bootloader), Part 3 of ~4 complete.** See
 [ROADMAP.md](ROADMAP.md) for the full phase plan and
 [CHANGELOG.md](CHANGELOG.md) for what has actually landed.
 
 ## What exists right now
 
-A UEFI PE32+ bootloader that boots under OVMF/QEMU and reads a real
-file off the boot volume via the Simple File System Protocol —
-`LoadedImageProtocol → SimpleFileSystemProtocol → OpenVolume → Open →
-GetInfo → AllocatePool → Read` — printing its contents to the console
-to prove the pipeline end to end. This is a genuine, verified
+A UEFI PE32+ bootloader that boots under OVMF/QEMU, reads a real file
+off the boot volume via the Simple File System Protocol, retrieves the
+final UEFI memory map, and calls `ExitBootServices` with the spec's
+required stale-key retry logic. After a successful exit — the point
+past which firmware services are no longer guaranteed usable — it
+reports success and a summary of usable memory directly over a raw
+COM1 UART driver it initializes itself. This is a genuine, verified
 checkpoint — not a placeholder — see [docs/adr](docs/adr) for the
 architecture decisions behind it.
 

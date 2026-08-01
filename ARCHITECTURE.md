@@ -14,8 +14,10 @@ can see how the pieces fit together before diving into individual records.
                               │ loads & calls EfiMain()
  ┌───────────────────────────▼───────────────────────────────┐
  │  Bootloader (boot/) — C, freestanding, PE32+ (ADR-001)     │
- │  Finds kernel on disk → builds boot-info struct →          │
- │  ExitBootServices → jumps to kernel entry                  │
+ │  Reads files via SFSP (ADR-003) → retrieves memory map →   │
+ │  ExitBootServices (retry-safe) → [Part 4: loads kernel,    │
+ │  jumps to entry]. Post-exit diagnostics via raw UART        │
+ │  (ADR-004).                                                 │
  └───────────────────────────┬───────────────────────────────┘
                               │ handoff struct (memory map, GOP fb, ACPI RSDP)
  ┌───────────────────────────▼───────────────────────────────┐
@@ -57,6 +59,12 @@ can see how the pieces fit together before diving into individual records.
   `EFI_SIMPLE_FILE_SYSTEM_PROTOCOL` (firmware's own FAT driver, accessed
   through the standard UEFI protocol interface) rather than writing a
   bootloader-owned FAT12/16/32 parser.
+- **ADR-004 — Post-ExitBootServices diagnostics:** after
+  `ExitBootServices` succeeds, the bootloader can no longer rely on
+  `ConOut`, so it uses a minimal, bootloader-local 16550 UART driver
+  (COM1, raw port I/O) to confirm success and report the final memory
+  map. This driver is not shared with the kernel's own future serial
+  driver (Phase 4).
 
 ## Component boundaries
 

@@ -41,11 +41,17 @@ all: $(TARGET)
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-$(BUILD_DIR)/main.o: main.c include/efi_types.h include/efi_tables.h | $(BUILD_DIR)
+$(BUILD_DIR)/main.o: main.c include/efi_types.h include/efi_tables.h include/efi_boot_services.h include/efi_loaded_image_protocol.h include/efi_file_protocol.h include/memory_map.h include/serial.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) main.c -o $(BUILD_DIR)/main.o
 
-$(TARGET): $(BUILD_DIR)/main.o
-	$(LD) $(LDFLAGS) $(BUILD_DIR)/main.o -o $(TARGET)
+$(BUILD_DIR)/serial.o: serial.c include/serial.h include/efi_types.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) serial.c -o $(BUILD_DIR)/serial.o
+
+$(BUILD_DIR)/memory_map.o: memory_map.c include/memory_map.h include/efi_boot_services.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) memory_map.c -o $(BUILD_DIR)/memory_map.o
+
+$(TARGET): $(BUILD_DIR)/main.o $(BUILD_DIR)/serial.o $(BUILD_DIR)/memory_map.o
+	$(LD) $(LDFLAGS) $(BUILD_DIR)/main.o $(BUILD_DIR)/serial.o $(BUILD_DIR)/memory_map.o -o $(TARGET)
 	@echo "Built $(TARGET)"
 
 clean:

@@ -6,9 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
-### Planned (Phase 2, Parts 3-4)
-- Memory map retrieval and `ExitBootServices` handoff.
+### Planned (Phase 2, Part 4)
 - Kernel image loading and jump-to-kernel handoff struct.
+
+## [v0.0.3-alpha] - 2026-07-31
+### Added
+- `docs/adr/ADR-004-post-exit-diagnostics.md` — decision to use a
+  bootloader-local raw 16550 UART driver (COM1) for diagnostics after
+  `ExitBootServices`, since `ConOut` is not guaranteed valid past that
+  point.
+- `boot/include/serial.h`, `boot/serial.c` — minimal 16550 UART driver:
+  explicit baud/line-control/FIFO initialization, no dependency on
+  firmware having configured the port.
+- `boot/include/memory_map.h`, `boot/memory_map.c` — spec-correct
+  `GetMemoryMap` + `ExitBootServices` sequencing with the required
+  stale-map-key retry loop (bounded at 5 attempts), plus buffer-size
+  slack to avoid a second `EFI_BUFFER_TOO_SMALL` from the allocation's
+  own effect on the memory map.
+### Changed
+- `boot/main.c` — Part 2's file-read pipeline unchanged; on success,
+  now retrieves the final memory map, calls `ExitBootServices` (with
+  retry), and reports success over raw COM1 — including a full memory
+  map walk (using firmware-reported descriptor stride, not
+  `sizeof(EFI_MEMORY_DESCRIPTOR)`) that sums usable (Conventional)
+  memory. Verified under QEMU/OVMF: 130 memory map entries, 48-byte
+  descriptor stride, ExitBootServices succeeded on first attempt.
+- `boot/Makefile` — builds and links `serial.c` and `memory_map.c`.
+- `.github/workflows/qemu-boot-test.yml`, `.github/workflows/release.yml`
+  — assertions updated to the Part 3 completion marker.
 
 ## [v0.0.2-alpha] - 2026-07-31
 ### Added
