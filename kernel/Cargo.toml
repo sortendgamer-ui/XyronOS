@@ -1,0 +1,21 @@
+[package]
+name = "xyronos-kernel"
+version = "0.1.0"
+edition = "2021"
+authors = ["XyronOS Project"]
+description = "XyronOS kernel core — Rust no_std, per ADR-001/ADR-006"
+
+# No dependencies yet — the skeleton uses only `core`. `alloc` is
+# enabled via build-std (.cargo/config.toml) for when the memory
+# manager subsystem introduces the kernel heap; it is not used by
+# anything in this skeleton, per the no-placeholder-code rule.
+[dependencies]
+
+[profile.dev]
+panic = "abort"
+# No debug-assertions override: kernel code should fail loudly in dev
+# builds exactly like any other Rust code — no special-casing here.
+
+[profile.release]
+panic = "abort"
+opt-level = 2

@@ -6,9 +6,67 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
-### Planned (Phase 3)
-- Kernel scheduler, memory manager, interrupts, exceptions, syscalls,
-  timers (Rust `no_std` core, per ADR-001).
+### Planned (Phase 3, next subsystem)
+- Memory manager implementation (physical frame allocator, virtual
+  memory manager, kernel heap) per `docs/kernel/MEMORY_MANAGER_DESIGN.md`.
+
+## [v0.2.0] - 2026-08-02
+### Phase 3 (Kernel) started — architecture designed, first buildable skeleton verified booting.
+### Added
+- `docs/adr/ADR-006-kernel-architecture.md` — monolithic kernel
+  decision (formalizing what ADR-001's driver/core split already
+  implied), kernel module layout, boot flow/initialization order,
+  panic policy, and the early-debug-output-vs-Phase-4-drivers
+  distinction.
+- `docs/kernel/MEMORY_MANAGER_DESIGN.md` — bitmap physical frame
+  allocator, page-table-backed virtual memory manager, linked-list
+  kernel heap allocator. **Designed, not yet implemented** — the next
+  kernel subsystem part builds this.
+- `docs/kernel/SCHEDULER_DESIGN.md` — task model, context-switch
+  mechanism (callee-saved registers only, no FP/SSE state), and a
+  round-robin scheduling algorithm. **Designed, not yet implemented.**
+- `docs/kernel/CODING_STANDARDS.md` — `unsafe` usage rules, panic vs.
+  `Result` policy, formatting/lint enforcement, testing approach.
+- `kernel/src/boot_info.rs` — the Rust half of the ADR-005 `BootInfo`
+  ABI contract, `#[repr(C)]`, field-for-field mirror of
+  `boot/include/boot_info.h`.
+- `kernel/src/main.rs`, `kernel/src/arch/x86_64/serial.rs` — the first
+  buildable Rust `no_std` kernel skeleton: validates `BootInfo`
+  (magic/version/size), reports its own physical/virtual location and
+  the received memory map summary over an independently-implemented
+  COM1 UART driver, then halts.
+- `toolchain/x86_64-os.json` — custom freestanding x86_64 target spec
+  (no built-in triple assumes an OS underneath, per Phase 1's original
+  toolchain plan).
+- `kernel/Cargo.toml`, `kernel/.cargo/config.toml`, `kernel/linker.ld`,
+  `kernel/rust-toolchain.toml` — kernel build configuration; places the
+  kernel at `KERNEL_VIRTUAL_BASE` (`0xFFFFFFFF80000000`, ADR-002).
+- `kernel/README.md` — build/boot-test instructions, including a
+  documented apt-based toolchain workaround for environments that
+  cannot reach `rustup`'s own domain (this project's own sandbox
+  needed it: `RUSTC_BOOTSTRAP=1`, a one-time `Cargo.lock` generation
+  for apt's `rust-src` package, and swapping a broken `rust-lld`
+  symlink for `ld.lld`) — CI uses the standard `rustup` path instead.
+### Changed
+- `.github/workflows/build.yml` — real (not speculative) kernel build
+  job; verifies the output is a valid ELF64 executable.
+- `.github/workflows/static-analysis.yml` — real `clippy`/`rustfmt`
+  enforcement for kernel code (`-D warnings`).
+- `.github/workflows/qemu-boot-test.yml` — split into two jobs:
+  bootloader + `tests/kernel_stub` fixture (fast bootloader regression
+  check, no Rust toolchain needed) and bootloader + the real kernel
+  (the actual Phase 3 milestone verification).
+- `.github/workflows/release.yml` — builds and boot-verifies the real
+  kernel before packaging a release, plus a regression check against
+  the fixture kernel to confirm the bootloader (frozen since Phase 2)
+  hasn't changed behavior.
+### Verified
+- Full chain booted live under QEMU/OVMF with the bootloader completely
+  unmodified from its Phase 2 v0.1.0 state: real Rust kernel reached
+  `kernel_main` at `0xFFFFFFFF80000190`, validated `BootInfo`, and
+  printed every handed-off field (kernel physical/virtual base, size,
+  stack, memory map entry count and descriptor size) correctly before
+  halting.
 
 ## [v0.1.0] - 2026-07-31
 ### Phase 2 (Bootloader) complete.

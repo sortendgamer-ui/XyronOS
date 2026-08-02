@@ -22,16 +22,18 @@ can see how the pieces fit together before diving into individual records.
  └───────────────────────────┬───────────────────────────────┘
                               │ handoff struct (memory map, kernel
                               │ location, dedicated stack — BOOT_INFO,
-                              │ ADR-005). Kernel core below does not
-                              │ exist yet — Phase 3 not started.
+                              │ ADR-005).
  ┌───────────────────────────▼───────────────────────────────┐
- │  Kernel core (kernel/) — Rust, no_std (ADR-001)            │
- │  Scheduler · Memory Manager · IPC · Syscall dispatch       │
+ │  Kernel core (kernel/) — Rust, no_std (ADR-001/ADR-006)    │
+ │  Skeleton verified booting (validates BootInfo, reports    │
+ │  over serial, halts). Memory Manager, Scheduler, IPC,       │
+ │  Syscall dispatch: DESIGNED (docs/kernel/), not yet built.  │
  │  Higher-half layout per ADR-002                            │
  │        │                                                  │
  │        ▼                                                  │
  │  Drivers (kernel/drivers/) — C11, C-ABI boundary (ADR-001) │
- │  Keyboard · Mouse · GPU fb · Disk · NIC                    │
+ │  Keyboard · Mouse · GPU fb · Disk · NIC — Phase 4, not      │
+ │  started                                                    │
  └───────────────────────────┬───────────────────────────────┘
                               │
         ┌─────────────────────┼─────────────────────┐
@@ -75,6 +77,12 @@ can see how the pieces fit together before diving into individual records.
   location, and a dedicated kernel stack; a fresh 4-level page table
   (2 MiB pages: identity map of the first 4 GiB + higher-half kernel
   mapping) is built and activated immediately before the jump.
+- **ADR-006 — Kernel architecture:** monolithic (drivers share the
+  kernel's address space and privilege level, per ADR-001's C-ABI
+  driver boundary), a fixed subsystem initialization order (early
+  serial → BootInfo validation → memory manager → interrupts/timer →
+  scheduler → syscalls), and an unconditional-halt panic policy until
+  a process model exists to make anything less drastic meaningful.
 
 ## Component boundaries
 
@@ -83,12 +91,17 @@ can see how the pieces fit together before diving into individual records.
   (finalized in Phase 2 Part 4). This keeps the bootloader/kernel contract
   explicit and testable independently.
 - **`kernel/drivers/`** talk to the kernel core only through the C-ABI
-  vtable interface formalized in ADR-004 (written when Phase 4 starts) —
-  never by reaching into kernel-core Rust structs directly.
+  vtable interface ADR-001 anticipates, to be formalized in a new ADR
+  when Phase 4 starts — never by reaching into kernel-core Rust
+  structs directly.
 - **Everything above the kernel** (filesystem, network, graphics, and up)
   runs as userland or kernel-adjacent services communicating through the
   syscall/IPC interface defined in Phase 3 — not through shared memory
   hacks or direct function calls across the layer boundary.
+- **`kernel/mm/` and `kernel/sched/`** (not yet implemented) will
+  follow `docs/kernel/MEMORY_MANAGER_DESIGN.md` and
+  `docs/kernel/SCHEDULER_DESIGN.md` respectively — read those before
+  touching either subsystem.
 
 ## Where to look for what
 

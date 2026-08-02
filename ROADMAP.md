@@ -9,7 +9,7 @@ the detailed history behind each checkmark.
 |-------|------|--------|
 | 1 | Requirements, Vision, Architecture, Boot/Memory Design | ✅ Complete & frozen |
 | 2 | Bootloader (UEFI, disk loader, boot menu) | ✅ Complete |
-| 3 | Kernel (scheduler, memory manager, interrupts, syscalls, timers) | ⬜ Not started |
+| 3 | Kernel (scheduler, memory manager, interrupts, syscalls, timers) | 🔵 In progress (skeleton verified; MM subsystem next) |
 | 4 | Device Drivers | ⬜ Not started |
 | 5 | File System | ⬜ Not started |
 | 6 | Networking Stack | ⬜ Not started |
@@ -27,6 +27,25 @@ the detailed history behind each checkmark.
 | 18 | Optimization | ⬜ Not started |
 | 19 | Documentation | ⬜ Not started |
 | 20 | Stable Release | ⬜ Not started |
+
+## Phase 3 breakdown (in progress)
+
+Subsystems are worked in the order ADR-006's "Boot flow and
+initialization order" establishes — each is not started until the one
+before it is documented and internally consistent, per project rule.
+
+- [x] Architecture — ADR-006, memory manager design, scheduler design,
+  `BootInfo` Rust binding, module layout, coding standards (all
+  documented before any kernel code was written)
+- [x] Skeleton — first buildable Rust `no_std` kernel: validates
+  `BootInfo`, reports its handoff data over serial, halts. Verified
+  booting against the unmodified Phase 2 bootloader.
+- [ ] Memory manager — physical frame allocator, virtual memory
+  manager, kernel heap (`docs/kernel/MEMORY_MANAGER_DESIGN.md`)
+- [ ] Interrupts/exceptions — GDT, IDT, exception handlers
+- [ ] Timer
+- [ ] Scheduler (`docs/kernel/SCHEDULER_DESIGN.md`)
+- [ ] System calls
 
 ## Phase 2 breakdown (complete)
 

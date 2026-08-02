@@ -1,0 +1,13 @@
+[toolchain]
+channel = "nightly"
+components = ["rust-src"]
+
+# Note (2026-08-02): this sandbox's Rust toolchain came from apt
+# (rustc/cargo/rust-src packages), not rustup — rustup's own domain is
+# not reachable from this environment's network allowlist. The apt
+# package is a "stable"-labeled release build, so build-std is enabled
+# here via RUSTC_BOOTSTRAP=1 (see kernel/README.md for the exact build
+# command) rather than a true nightly toolchain switch. This file still
+# documents the correct requirement for any environment where rustup
+# *is* available — installing the real nightly channel there needs no
+# workaround.
