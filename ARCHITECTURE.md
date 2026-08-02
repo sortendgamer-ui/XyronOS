@@ -14,12 +14,16 @@ can see how the pieces fit together before diving into individual records.
                               │ loads & calls EfiMain()
  ┌───────────────────────────▼───────────────────────────────┐
  │  Bootloader (boot/) — C, freestanding, PE32+ (ADR-001)     │
- │  Reads files via SFSP (ADR-003) → retrieves memory map →   │
- │  ExitBootServices (retry-safe) → [Part 4: loads kernel,    │
- │  jumps to entry]. Post-exit diagnostics via raw UART        │
- │  (ADR-004).                                                 │
+ │  Reads files via SFSP (ADR-003) → loads kernel ELF64 →     │
+ │  builds page tables → retrieves memory map → exits boot    │
+ │  services (retry-safe) → jumps to kernel entry (ADR-005).  │
+ │  Post-exit diagnostics via raw UART (ADR-004). PHASE 2      │
+ │  COMPLETE — verified end to end against tests/kernel_stub. │
  └───────────────────────────┬───────────────────────────────┘
-                              │ handoff struct (memory map, GOP fb, ACPI RSDP)
+                              │ handoff struct (memory map, kernel
+                              │ location, dedicated stack — BOOT_INFO,
+                              │ ADR-005). Kernel core below does not
+                              │ exist yet — Phase 3 not started.
  ┌───────────────────────────▼───────────────────────────────┐
  │  Kernel core (kernel/) — Rust, no_std (ADR-001)            │
  │  Scheduler · Memory Manager · IPC · Syscall dispatch       │
@@ -65,6 +69,12 @@ can see how the pieces fit together before diving into individual records.
   (COM1, raw port I/O) to confirm success and report the final memory
   map. This driver is not shared with the kernel's own future serial
   driver (Phase 4).
+- **ADR-005 — Kernel handoff:** the bootloader (MS x64 ABI) hands off
+  to the kernel (SysV AMD64 ABI) through a single NASM trampoline; a
+  versioned `BOOT_INFO` struct carries the memory map, kernel image
+  location, and a dedicated kernel stack; a fresh 4-level page table
+  (2 MiB pages: identity map of the first 4 GiB + higher-half kernel
+  mapping) is built and activated immediately before the jump.
 
 ## Component boundaries
 

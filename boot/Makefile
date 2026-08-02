@@ -41,17 +41,33 @@ all: $(TARGET)
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-$(BUILD_DIR)/main.o: main.c include/efi_types.h include/efi_tables.h include/efi_boot_services.h include/efi_loaded_image_protocol.h include/efi_file_protocol.h include/memory_map.h include/serial.h | $(BUILD_DIR)
+AS      := nasm
+# -f win64: NASM's PE/COFF object format for x86_64, compatible with
+# the mingw-w64 linker used for the rest of this bootloader — keeps
+# trampoline.asm in the same PE32+ toolchain as everything else rather
+# than requiring a second, incompatible object format.
+ASFLAGS := -f win64
+
+$(BUILD_DIR)/main.o: main.c include/efi_types.h include/efi_tables.h include/efi_boot_services.h include/efi_loaded_image_protocol.h include/efi_file_protocol.h include/memory_map.h include/serial.h include/boot_defs.h include/boot_info.h include/kernel_loader.h include/paging.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) main.c -o $(BUILD_DIR)/main.o
 
 $(BUILD_DIR)/serial.o: serial.c include/serial.h include/efi_types.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) serial.c -o $(BUILD_DIR)/serial.o
 
-$(BUILD_DIR)/memory_map.o: memory_map.c include/memory_map.h include/efi_boot_services.h | $(BUILD_DIR)
+$(BUILD_DIR)/memory_map.o: memory_map.c include/memory_map.h include/efi_boot_services.h include/boot_defs.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) memory_map.c -o $(BUILD_DIR)/memory_map.o
 
-$(TARGET): $(BUILD_DIR)/main.o $(BUILD_DIR)/serial.o $(BUILD_DIR)/memory_map.o
-	$(LD) $(LDFLAGS) $(BUILD_DIR)/main.o $(BUILD_DIR)/serial.o $(BUILD_DIR)/memory_map.o -o $(TARGET)
+$(BUILD_DIR)/paging.o: paging.c include/paging.h include/boot_defs.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) paging.c -o $(BUILD_DIR)/paging.o
+
+$(BUILD_DIR)/kernel_loader.o: kernel_loader.c include/kernel_loader.h include/elf.h include/boot_defs.h | $(BUILD_DIR)
+	$(CC) $(CFLAGS) kernel_loader.c -o $(BUILD_DIR)/kernel_loader.o
+
+$(BUILD_DIR)/trampoline.o: trampoline.asm | $(BUILD_DIR)
+	$(AS) $(ASFLAGS) trampoline.asm -o $(BUILD_DIR)/trampoline.o
+
+$(TARGET): $(BUILD_DIR)/main.o $(BUILD_DIR)/serial.o $(BUILD_DIR)/memory_map.o $(BUILD_DIR)/paging.o $(BUILD_DIR)/kernel_loader.o $(BUILD_DIR)/trampoline.o
+	$(LD) $(LDFLAGS) $(BUILD_DIR)/main.o $(BUILD_DIR)/serial.o $(BUILD_DIR)/memory_map.o $(BUILD_DIR)/paging.o $(BUILD_DIR)/kernel_loader.o $(BUILD_DIR)/trampoline.o -o $(TARGET)
 	@echo "Built $(TARGET)"
 
 clean:

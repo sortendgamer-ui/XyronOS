@@ -8,7 +8,7 @@ the detailed history behind each checkmark.
 | Phase | Name | Status |
 |-------|------|--------|
 | 1 | Requirements, Vision, Architecture, Boot/Memory Design | ✅ Complete & frozen |
-| 2 | Bootloader (UEFI, disk loader, boot menu) | 🔵 In progress (Part 3/4) |
+| 2 | Bootloader (UEFI, disk loader, boot menu) | ✅ Complete |
 | 3 | Kernel (scheduler, memory manager, interrupts, syscalls, timers) | ⬜ Not started |
 | 4 | Device Drivers | ⬜ Not started |
 | 5 | File System | ⬜ Not started |
@@ -28,12 +28,20 @@ the detailed history behind each checkmark.
 | 19 | Documentation | ⬜ Not started |
 | 20 | Stable Release | ⬜ Not started |
 
-## Phase 2 breakdown (current)
+## Phase 2 breakdown (complete)
 
 - [x] Part 1 — Minimal UEFI PE32+ "hello world," verified booting in QEMU/OVMF
 - [x] Part 2 — Full Boot Services table + Simple File System Protocol reader, verified reading a real file end to end
 - [x] Part 3 — Memory map retrieval + `ExitBootServices`, verified with a real retry-safe sequence and post-exit raw-serial confirmation
-- [ ] Part 4 — Kernel image loading + handoff struct + jump to kernel
+- [x] Part 4 — ELF64 kernel loader + `BootInfo` handoff + page tables + jump to kernel, verified end to end against a real test-fixture kernel (`tests/kernel_stub`)
+
+Note: the original Phase 2 brief listed a boot menu as part of this
+phase. It has been deferred to Phase 3 startup (or a later Phase 2
+addendum if needed sooner) since it depends on keyboard input
+(`EFI_SIMPLE_TEXT_INPUT_PROTOCOL`, only forward-declared so far — see
+`boot/include/efi_tables.h`) that no part of Phase 2 needed until now,
+and the phase's core deliverable — a working, verified kernel handoff
+mechanism — is what Part 4 completes.
 
 ## Versioning approach across phases
 

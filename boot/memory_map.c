@@ -1,28 +1,20 @@
 /*
- * memory_map.c — see memory_map.h for the contract and rationale.
+ * memory_map.c — see memory_map.h for the contract.
+ *
+ * Part 4 change from Part 3 (see ADR-005 "Consequences"): the final
+ * memory map buffer now comes from AllocatePages(AllocateMaxAddress)
+ * instead of AllocatePool, capped below IDENTITY_MAP_LIMIT, so the
+ * kernel can dereference MemoryMapPhysAddr (via BootInfo) after the
+ * jump — a plain AllocatePool call gives no control over where the
+ * memory lands and could return an address our post-jump identity map
+ * doesn't cover. The stale-map-key retry loop itself, the actual
+ * subject of Part 3, is unchanged below.
  */
 
 #include "include/memory_map.h"
+#include "include/boot_defs.h"
 
-/* Bounded retry count for the ExitBootServices sequence. The spec does
- * not define a maximum, but an unbounded loop risks hanging the
- * machine forever if something is pathologically wrong (e.g. a
- * firmware bug that invalidates the key on every single attempt). In
- * correctly behaving firmware, one retry is normally sufficient — the
- * map only changes due to our own AllocatePool call for the map buffer
- * itself, which happens once per attempt. Five attempts gives ample
- * margin over that without risking an infinite hang. */
 #define MAX_EXIT_ATTEMPTS 5
-
-/* Extra slack (in descriptor-sized units) added to the buffer size
- * GetMemoryMap's size-query call reports. Between that size query and
- * our subsequent AllocatePool call for the buffer, AllocatePool's own
- * bookkeeping can itself grow the memory map by a small number of
- * entries (e.g. splitting a free region). Without slack, the very
- * next GetMemoryMap call could return EFI_BUFFER_TOO_SMALL again for a
- * buffer we just sized to fit — this is a well-documented UEFI
- * programming pitfall, and the slack avoids it rather than looping
- * indefinitely on buffer growth. */
 #define MEMORY_MAP_SLACK_ENTRIES 8
 
 BOOLEAN ExitBootServicesWithRetry(
@@ -34,52 +26,49 @@ BOOLEAN ExitBootServicesWithRetry(
     EFI_BOOT_SERVICES *BS = SystemTable->BootServices;
 
     for (int attempt = 0; attempt < MAX_EXIT_ATTEMPTS; attempt++) {
-        /* Step 1: ask GetMemoryMap how large a buffer it needs. Per
-         * spec, calling with MemoryMapSize too small (0, here) returns
-         * EFI_BUFFER_TOO_SMALL and still writes the required size into
-         * MemoryMapSize — we deliberately ignore the returned status
-         * here and only use the size, since EFI_BUFFER_TOO_SMALL is
-         * the expected, not exceptional, outcome of this call. */
         UINTN mapSize = 0;
         UINTN mapKey = 0;
         UINTN descriptorSize = 0;
         UINT32 descriptorVersion = 0;
 
+        /* Step 1: learn the required buffer size. Ignoring the
+         * returned status is intentional — EFI_BUFFER_TOO_SMALL is
+         * the expected outcome of a zero-size query, not an error. */
         BS->GetMemoryMap(&mapSize, 0, &mapKey, &descriptorSize, &descriptorVersion);
 
         if (descriptorSize == 0) {
-            /* Firmware did not report a descriptor size — something is
-             * badly wrong; we cannot safely proceed. */
             return FALSE;
         }
 
         mapSize += descriptorSize * MEMORY_MAP_SLACK_ENTRIES;
 
-        /* Step 2: allocate the buffer. THIS is the call most likely to
-         * invalidate whatever map key we eventually get, because it is
-         * itself a memory allocation — which is exactly why we get the
-         * key AFTER this allocation, not before. */
-        EFI_MEMORY_DESCRIPTOR *mapBuffer = 0;
-        EFI_STATUS status = BS->AllocatePool(EfiLoaderData, mapSize, (VOID **)&mapBuffer);
+        /* Step 2: allocate the buffer via AllocatePages, capped below
+         * IDENTITY_MAP_LIMIT so the kernel can read it post-jump (see
+         * file header comment and ADR-005). This allocation is itself
+         * what most often invalidates the map key we're about to
+         * fetch — which is exactly why the key is fetched AFTER it,
+         * not before. */
+        UINT64 pageCount = RoundUpTo(mapSize, PAGE_SIZE_4K) / PAGE_SIZE_4K;
+        EFI_PHYSICAL_ADDRESS mapPhysAddr = IDENTITY_MAP_LIMIT - 1;
+        EFI_STATUS status = BS->AllocatePages(AllocateMaxAddress, EfiLoaderData,
+                                               pageCount, &mapPhysAddr);
         if (EFI_ERROR(status)) {
             return FALSE; /* Cannot proceed without a map buffer. */
         }
 
+        EFI_MEMORY_DESCRIPTOR *mapBuffer = (EFI_MEMORY_DESCRIPTOR *)(UINTN)mapPhysAddr;
+
         /* Step 3: the real GetMemoryMap call, immediately after the
          * allocation above, with no other Boot Services calls in
-         * between. The MapKey this returns corresponds to the memory
+         * between — the MapKey this returns corresponds to memory
          * state at exactly this instant. */
         status = BS->GetMemoryMap(&mapSize, mapBuffer, &mapKey, &descriptorSize, &descriptorVersion);
         if (EFI_ERROR(status)) {
-            BS->FreePool(mapBuffer);
-            continue; /* Retry from scratch — buffer size may have
-                          changed again; re-query rather than assume. */
+            BS->FreePages(mapPhysAddr, pageCount);
+            continue; /* Retry from scratch. */
         }
 
-        /* Step 4: attempt the exit. THIS is the only call in the loop
-         * that, on success, means Boot Services no longer exist —
-         * everything before this point in this iteration was still
-         * running with full Boot Services available. */
+        /* Step 4: attempt the exit. */
         status = BS->ExitBootServices(ImageHandle, mapKey);
         if (status == EFI_SUCCESS) {
             OutMemoryMap->Map = mapBuffer;
@@ -87,24 +76,16 @@ BOOLEAN ExitBootServicesWithRetry(
             OutMemoryMap->DescriptorSize = descriptorSize;
             OutMemoryMap->DescriptorVersion = descriptorVersion;
             OutMemoryMap->EntryCount = mapSize / descriptorSize;
-            /* mapBuffer is deliberately NOT freed here — FreePool is a
-             * Boot Service, and Boot Services no longer exist as of
-             * the line above. This allocation is now permanently ours
-             * to keep (and, starting Part 4, to pass to the kernel). */
+            /* Deliberately not freed — FreePages is a Boot Service,
+             * and Boot Services no longer exist as of the line above.
+             * This allocation belongs to the kernel now. */
             return TRUE;
         }
 
-        /* ExitBootServices failed — per spec, this means the map key
-         * was stale (something changed the memory map after our
-         * GetMemoryMap call above, before this ExitBootServices call
-         * reached firmware). Free this attempt's buffer (Boot
-         * Services are still active, so FreePool is still valid) and
-         * loop around to try again with a freshly retrieved map. */
-        BS->FreePool(mapBuffer);
+        /* Stale map key — free this attempt's buffer (Boot Services
+         * are still active here) and retry with a fresh map. */
+        BS->FreePages(mapPhysAddr, pageCount);
     }
 
-    /* Retry budget exhausted without a successful exit. Boot Services
-     * are still active — the caller can still report this failure
-     * through ConOut. */
     return FALSE;
 }

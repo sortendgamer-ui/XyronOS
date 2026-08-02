@@ -6,8 +6,63 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
-### Planned (Phase 2, Part 4)
-- Kernel image loading and jump-to-kernel handoff struct.
+### Planned (Phase 3)
+- Kernel scheduler, memory manager, interrupts, exceptions, syscalls,
+  timers (Rust `no_std` core, per ADR-001).
+
+## [v0.1.0] - 2026-07-31
+### Phase 2 (Bootloader) complete.
+### Added
+- `docs/adr/ADR-005-kernel-handoff.md` — calling-convention boundary
+  (MS x64 bootloader / SysV AMD64 kernel), the versioned `BOOT_INFO`
+  ABI, and the paging strategy (identity map + higher-half mapping,
+  both via 2 MiB pages) used to make the jump correct.
+- `boot/include/boot_defs.h` — shared constants (page sizes, identity
+  map limit, kernel virtual base, kernel size limit).
+- `boot/include/elf.h` — ELF64 structures (header, program header)
+  per the ELF specification.
+- `boot/include/boot_info.h` — the `BOOT_INFO` handoff struct: magic,
+  version, memory map descriptor, kernel image location, dedicated
+  kernel stack.
+- `boot/include/paging.h`, `boot/paging.c` — builds a fresh 4-level
+  page table: identity map of the first 4 GiB (2 MiB pages) plus the
+  higher-half kernel mapping at `0xFFFFFFFF80000000` (ADR-002).
+- `boot/include/kernel_loader.h`, `boot/kernel_loader.c` — validates
+  and loads an `ET_EXEC` ELF64 kernel image into a capped-address
+  physical location, correctly handling BSS (zero-fill) and using
+  the ELF's own `e_phentsize` as the program-header iteration stride
+  (not `sizeof(Elf64_Phdr)`).
+- `boot/trampoline.asm` — the first NASM code in this project
+  (per ADR-001): switches CR3, switches to the dedicated kernel stack,
+  moves the BootInfo pointer into RDI (SysV ABI), and jumps to the
+  kernel entry point.
+- `tests/kernel_stub/` — a minimal ELF64 test fixture (explicitly NOT
+  Phase 3 kernel work; see its README.md) that validates the received
+  BootInfo and reports success over serial, proving the full handoff
+  end to end.
+### Changed
+- `boot/memory_map.c` — final memory map buffer allocation switched
+  from `AllocatePool` to address-capped `AllocatePages`
+  (`AllocateMaxAddress`), so the kernel can dereference it post-jump
+  (ADR-005). The stale-map-key retry loop itself is unchanged.
+- `boot/main.c` — orchestrates the full sequence: file read (Part 2,
+  unchanged) → load kernel ELF → allocate + pre-populate BootInfo →
+  allocate kernel stack → build page tables → retrieve memory map and
+  exit boot services (Part 3, unchanged) → finish populating BootInfo
+  → jump to kernel. Verified end to end under QEMU/OVMF: kernel stub
+  reached its entry point at `0xFFFFFFFF80000000`, validated BootInfo,
+  and printed every handed-off field correctly.
+- `boot/Makefile` — builds and links `paging.c`, `kernel_loader.c`,
+  and assembles/links `trampoline.asm` (NASM, win64 object format).
+### Fixed
+- **Use-after-free in `kernel_loader.c`:** `OutKernel->EntryPointVirtual`
+  was read from `ehdr->e_entry` (a pointer into `fileBuffer`) AFTER
+  `fileBuffer` had already been freed. Caught by actually booting the
+  full chain in QEMU — the entry point printed as
+  `0xAFAFAFAFAFAFAFAF`, EDK2's freed-pool debug scrub pattern. Fixed
+  by capturing `e_entry` into a local variable before the `FreePool`
+  call. Documented in the source as a demonstration of why this
+  project boot-tests every part rather than only compiling it.
 
 ## [v0.0.3-alpha] - 2026-07-31
 ### Added
