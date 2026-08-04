@@ -7,8 +7,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 ### Planned (Phase 3, next subsystem)
-- Memory manager implementation (physical frame allocator, virtual
-  memory manager, kernel heap) per `docs/kernel/MEMORY_MANAGER_DESIGN.md`.
+- Interrupts/exceptions: GDT, IDT, exception handlers.
+
+## [v0.3.0] - 2026-08-02
+### Phase 3 (Kernel) — Memory Manager subsystem: physical frame allocator implemented, tested, and boot-verified.
+### Added
+- `kernel/src/mm/phys_addr.rs` — `PhysAddr` newtype (compiler-enforced
+  physical/virtual address distinction, per
+  `docs/kernel/CODING_STANDARDS.md`'s type-system-safety guidance),
+  frame-number conversion, alignment checking. 3 unit tests.
+- `kernel/src/mm/memory_map.rs` — `MemoryMapIter`, reading the raw UEFI
+  memory map from `BootInfo` at fixed byte offsets with
+  `descriptor_size` as the iteration stride — the same non-fixed-
+  stride lesson `boot/main.c` already applied, now also applied
+  kernel-side.
+- `kernel/src/mm/frame_allocator.rs` — bitmap physical frame allocator
+  (`FrameAllocator::init`/`allocate`/`deallocate`), with upfront
+  whole-map validation and per-entry validation (zero-length,
+  non-frame-aligned, overflow-on-end-address) per requirement 3
+  ("validate all memory regions before use"). 6 unit tests, including
+  a double-free rejection test and a bookkeeping regression test.
+- `kernel/src/mm/mod.rs` — subsystem module root.
+- `kernel_main` (main.rs): memory manager bring-up (ADR-006 boot flow
+  step 3) plus a boot-time integration self-test
+  (`run_frame_allocator_boot_self_test`) exercising the allocator
+  against the REAL memory map this specific boot received — 16
+  allocations checked pairwise-distinct, bookkeeping checked after
+  allocation and after freeing everything. Requirement 7.
+- `main.rs` restructured with `#[cfg(not(test))]`/`#[cfg(test)]`
+  gating so `mm/`'s unit tests can run on the host target while the
+  real kernel stays a freestanding `no_std`/`no_main` binary.
+- `TODO.md` — every future feature request (AI assistant, GUI, gaming,
+  drivers, networking, security, face unlock, package manager, app
+  store, etc.) recorded here rather than implemented early, per
+  explicit instruction.
+- `TECH_DEBT.md` — known, documented limitations: the frame allocator
+  bitmap sizes itself off the entire memory map including MMIO
+  regions (correct but wasteful; fix deferred, not a defect), plus the
+  two `.cargo/config.toml` traps below.
+### Fixed
+- **`.cargo/config.toml`: `[unstable] build-std` applied globally,
+  breaking `cargo test`.** Building `core` from source (build-std) for
+  a host-target test run, while also linking the host's own prebuilt
+  `core` (via prebuilt `std`), produced `error[E0152]: duplicate lang
+  item`. Fixed by passing `-Z build-std=core,alloc` explicitly on the
+  command line for real builds instead of via `[unstable]` — never for
+  `cargo test`. Caught by actually running `cargo test`, not by
+  inspection.
+- **`.cargo/config.toml`: `rustflags` under `[build]` applied
+  globally, corrupting the host test binary.** The kernel's
+  `-Tlinker.ld` (entry point `0xFFFFFFFF80000000`) was being linked
+  into the HOST test executable too, which then segfaulted immediately
+  on startup with zero output. Fixed by scoping `rustflags` to
+  `[target.x86_64-os]` instead of `[build]`. Also caught by actually
+  running the tests — both fixes are documented in detail in
+  `kernel/README.md` and `TECH_DEBT.md`.
+### Changed
+- `docs/kernel/MEMORY_MANAGER_DESIGN.md` — status updated from
+  "designed, not yet implemented" to reflect the physical frame
+  allocator's completion; added the concrete below-4-GiB bitmap
+  storage constraint settled during implementation (identity map
+  limit, ADR-005).
+- `kernel/README.md` — full rewrite: correct build-std/rustflags
+  invocation, unit-test-running instructions, and the two config.toml
+  traps explained in detail.
+- `.github/workflows/build.yml` — added `test-kernel` job (runs the
+  host-target unit tests); every kernel `cargo` invocation across all
+  workflows updated with the now-explicit `-Z build-std` flags.
+- `.github/workflows/qemu-boot-test.yml`, `.github/workflows/release.yml`
+  — success marker updated to `"Frame allocator boot self-test: ALL
+  CHECKS PASSED"` (the new, more specific verification point).
+### Verified
+- Real kernel build: zero warnings, clean release build.
+- Unit tests: 9/9 passing on host target
+  (`x86_64-unknown-linux-gnu`).
+- Full boot chain re-verified end to end under QEMU/OVMF after every
+  fix in this milestone, against the unmodified Phase 2 bootloader and
+  unmodified Phase 3 skeleton entry sequence — zero changes to `boot/`
+  this milestone.
 
 ## [v0.2.0] - 2026-08-02
 ### Phase 3 (Kernel) started — architecture designed, first buildable skeleton verified booting.

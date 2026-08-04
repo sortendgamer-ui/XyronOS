@@ -7,10 +7,13 @@ implement those *specifications* independently from their public
 documentation, never from an existing reference implementation.
 
 Current status: **Phase 2 (Bootloader) complete. Phase 3 (Kernel) in
-progress** — architecture designed, first buildable Rust `no_std`
-kernel skeleton verified booting. See [ROADMAP.md](ROADMAP.md) for the
-full phase plan and [CHANGELOG.md](CHANGELOG.md) for what has actually
-landed.
+progress** — architecture designed, kernel skeleton verified booting,
+physical frame allocator (memory manager subsystem) implemented,
+tested, and boot-verified. See [ROADMAP.md](ROADMAP.md) for the full
+phase plan and [CHANGELOG.md](CHANGELOG.md) for what has actually
+landed. Future feature requests not yet scheduled are tracked in
+[TODO.md](TODO.md); known non-bug limitations in
+[TECH_DEBT.md](TECH_DEBT.md).
 
 ## What exists right now
 
@@ -25,9 +28,12 @@ logic, and jumps to the kernel's entry point with a populated
 
 On top of that: a real Rust `no_std` kernel (`kernel/`, Phase 3, in
 progress) that this same bootloader loads and jumps to. It validates
-the `BootInfo` handoff struct and reports its own location and the
-received memory map summary over serial before halting. The memory
-manager and scheduler are fully designed
+the `BootInfo` handoff struct, then brings up a physical frame
+allocator (bitmap-based, built from the real UEFI memory map, with
+9 unit tests and a boot-time integration self-test that exercises it
+against this specific boot's real data) before reporting success over
+serial and halting. The virtual memory manager, kernel heap, and
+scheduler are fully designed
 (`docs/kernel/MEMORY_MANAGER_DESIGN.md`,
 `docs/kernel/SCHEDULER_DESIGN.md`) but not yet implemented — see
 `docs/adr/ADR-006-kernel-architecture.md` for the overall kernel
@@ -87,6 +93,8 @@ bootloader in isolation against `tests/kernel_stub` instead.
 - [docs/VISION.md](docs/VISION.md) — project vision and v1 feature scope
 - [docs/adr/](docs/adr) — all Architecture Decision Records (frozen once accepted; see CONTRIBUTING.md for the amendment process)
 - [ROADMAP.md](ROADMAP.md) — phase-by-phase plan, 20 phases total
+- [TODO.md](TODO.md) — future feature requests, recorded not scheduled
+- [TECH_DEBT.md](TECH_DEBT.md) — known limitations that are correct but not optimal
 - [CONTRIBUTING.md](CONTRIBUTING.md) — how the project is developed
 - [SECURITY.md](SECURITY.md) — how to report vulnerabilities
 

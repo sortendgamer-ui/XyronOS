@@ -1,11 +1,9 @@
 # Kernel Memory Manager — Design
 
-Status: **Designed, not yet implemented.** This document describes the
-design the next kernel subsystem part will build; the skeleton
-accompanying ADR-006 does not implement any of this yet — see that
-ADR's "Boot flow and initialization order" for why memory management
-comes immediately after BootInfo validation but is still a separate,
-later part.
+Status: **Physical frame allocator implemented and boot-tested
+(`kernel/src/mm/`). Virtual memory manager and kernel heap: designed,
+not yet implemented** — see ADR-006's initialization order for why
+they come later, as their own subsystem parts.
 
 ## Goals
 1. Turn the raw UEFI memory map handed off in `BootInfo`
@@ -36,6 +34,24 @@ walking the `BootInfo` memory map once at init:
   that region's own frames are then marked used for the bitmap itself,
   in the same pass — a bitmap that didn't reserve its own storage
   would let something else be allocated on top of it.
+
+**Concrete constraint, settled during implementation:** the region
+chosen for the bitmap's storage must lie entirely below `0x100000000`
+(4 GiB) — the limit of the identity map the bootloader's page tables
+already cover (ADR-005). The virtual memory manager (next kernel
+subsystem, not yet built) is what will eventually let the kernel map
+*any* physical address; until then, the kernel can only directly
+dereference a physical address that already falls inside the
+bootloader's identity map, so the bitmap — which the kernel must write
+to directly during this very subsystem's init — has nowhere else it
+could safely live. This does not limit which frames the bitmap can
+*track or allocate* (the full physical memory map is tracked,
+including anything above 4 GiB) — only where the bookkeeping structure
+itself is stored. Frames above 4 GiB can be allocated by this
+subsystem (correct bookkeeping), but are not yet directly usable by
+kernel code until the virtual memory manager can map them — a known,
+documented limitation of this subsystem alone, not a defect (see
+`TECH_DEBT.md`).
 
 A bitmap (versus a free-list) is the deliberate choice for this first
 implementation: O(n) worst-case allocation (scanning for a free bit)

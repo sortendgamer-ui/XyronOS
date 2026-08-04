@@ -9,7 +9,7 @@ the detailed history behind each checkmark.
 |-------|------|--------|
 | 1 | Requirements, Vision, Architecture, Boot/Memory Design | ✅ Complete & frozen |
 | 2 | Bootloader (UEFI, disk loader, boot menu) | ✅ Complete |
-| 3 | Kernel (scheduler, memory manager, interrupts, syscalls, timers) | 🔵 In progress (skeleton verified; MM subsystem next) |
+| 3 | Kernel (scheduler, memory manager, interrupts, syscalls, timers) | 🔵 In progress (frame allocator done; interrupts next) |
 | 4 | Device Drivers | ⬜ Not started |
 | 5 | File System | ⬜ Not started |
 | 6 | Networking Stack | ⬜ Not started |
@@ -40,8 +40,12 @@ before it is documented and internally consistent, per project rule.
 - [x] Skeleton — first buildable Rust `no_std` kernel: validates
   `BootInfo`, reports its handoff data over serial, halts. Verified
   booting against the unmodified Phase 2 bootloader.
-- [ ] Memory manager — physical frame allocator, virtual memory
-  manager, kernel heap (`docs/kernel/MEMORY_MANAGER_DESIGN.md`)
+- [x] Memory manager — physical frame allocator: bitmap allocator
+  built from the real UEFI memory map, validated per-entry and
+  whole-map, 9 unit tests (host target) + a boot-time integration
+  self-test against real memory map data. Virtual memory manager and
+  kernel heap remain future work within this same subsystem — see
+  `docs/kernel/MEMORY_MANAGER_DESIGN.md`.
 - [ ] Interrupts/exceptions — GDT, IDT, exception handlers
 - [ ] Timer
 - [ ] Scheduler (`docs/kernel/SCHEDULER_DESIGN.md`)

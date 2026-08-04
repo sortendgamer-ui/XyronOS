@@ -25,9 +25,10 @@ can see how the pieces fit together before diving into individual records.
                               │ ADR-005).
  ┌───────────────────────────▼───────────────────────────────┐
  │  Kernel core (kernel/) — Rust, no_std (ADR-001/ADR-006)    │
- │  Skeleton verified booting (validates BootInfo, reports    │
- │  over serial, halts). Memory Manager, Scheduler, IPC,       │
- │  Syscall dispatch: DESIGNED (docs/kernel/), not yet built.  │
+ │  Physical frame allocator: DONE, tested, boot-verified      │
+ │  (kernel/src/mm/). Virtual Memory Manager, Kernel Heap,      │
+ │  Scheduler, IPC, Syscall dispatch: DESIGNED (docs/kernel/),  │
+ │  not yet built.                                              │
  │  Higher-half layout per ADR-002                            │
  │        │                                                  │
  │        ▼                                                  │
@@ -110,5 +111,7 @@ can see how the pieces fit together before diving into individual records.
 | "Why did we choose X?" | `docs/adr/` |
 | "What's built so far?" | `CHANGELOG.md` |
 | "What's next?" | `ROADMAP.md` |
-| "How do I build/test it?" | `README.md`, component-level docs (e.g. `toolchain/SETUP.md`) |
+| "How do I build/test it?" | `README.md`, component-level docs (e.g. `toolchain/SETUP.md`, `kernel/README.md`) |
 | "What's the v1 feature scope?" | `docs/VISION.md` |
+| "What feature requests exist but aren't scheduled?" | `TODO.md` |
+| "What known limitations/shortcuts exist?" | `TECH_DEBT.md` |
