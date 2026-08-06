@@ -8,12 +8,12 @@ documentation, never from an existing reference implementation.
 
 Current status: **Phase 2 (Bootloader) complete. Phase 3 (Kernel) in
 progress** — architecture designed, kernel skeleton verified booting,
-physical frame allocator (memory manager subsystem) implemented,
-tested, and boot-verified. See [ROADMAP.md](ROADMAP.md) for the full
-phase plan and [CHANGELOG.md](CHANGELOG.md) for what has actually
-landed. Future feature requests not yet scheduled are tracked in
-[TODO.md](TODO.md); known non-bug limitations in
-[TECH_DEBT.md](TECH_DEBT.md).
+physical frame allocator and virtual memory manager (memory manager
+subsystem) implemented, tested, and boot-verified. See
+[ROADMAP.md](ROADMAP.md) for the full phase plan and
+[CHANGELOG.md](CHANGELOG.md) for what has actually landed. Future
+feature requests not yet scheduled are tracked in [TODO.md](TODO.md);
+known non-bug limitations in [TECH_DEBT.md](TECH_DEBT.md).
 
 ## What exists right now
 

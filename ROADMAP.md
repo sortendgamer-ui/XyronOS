@@ -9,7 +9,7 @@ the detailed history behind each checkmark.
 |-------|------|--------|
 | 1 | Requirements, Vision, Architecture, Boot/Memory Design | ✅ Complete & frozen |
 | 2 | Bootloader (UEFI, disk loader, boot menu) | ✅ Complete |
-| 3 | Kernel (scheduler, memory manager, interrupts, syscalls, timers) | 🔵 In progress (frame allocator done; interrupts next) |
+| 3 | Kernel (scheduler, memory manager, interrupts, syscalls, timers) | 🔵 In progress (frame allocator + VMM done; interrupts next) |
 | 4 | Device Drivers | ⬜ Not started |
 | 5 | File System | ⬜ Not started |
 | 6 | Networking Stack | ⬜ Not started |
@@ -46,6 +46,12 @@ before it is documented and internally consistent, per project rule.
   self-test against real memory map data. Virtual memory manager and
   kernel heap remain future work within this same subsystem — see
   `docs/kernel/MEMORY_MANAGER_DESIGN.md`.
+- [x] Memory manager — virtual memory manager: 4-level page-table
+  walker, `map`/`unmap`/`translate`/`flags_at`, reusing the
+  bootloader's PML4, EFER.NXE enablement, TLB invalidation. 12 unit
+  tests (host target) + a boot-time integration self-test including a
+  higher-half-kernel-mapping-compatibility check. Kernel heap
+  allocator remains future work within this same subsystem.
 - [ ] Interrupts/exceptions — GDT, IDT, exception handlers
 - [ ] Timer
 - [ ] Scheduler (`docs/kernel/SCHEDULER_DESIGN.md`)

@@ -25,8 +25,8 @@ can see how the pieces fit together before diving into individual records.
                               │ ADR-005).
  ┌───────────────────────────▼───────────────────────────────┐
  │  Kernel core (kernel/) — Rust, no_std (ADR-001/ADR-006)    │
- │  Physical frame allocator: DONE, tested, boot-verified      │
- │  (kernel/src/mm/). Virtual Memory Manager, Kernel Heap,      │
+ │  Physical frame allocator + Virtual Memory Manager: DONE,   │
+ │  tested, boot-verified (kernel/src/mm/). Kernel Heap,        │
  │  Scheduler, IPC, Syscall dispatch: DESIGNED (docs/kernel/),  │
  │  not yet built.                                              │
  │  Higher-half layout per ADR-002                            │

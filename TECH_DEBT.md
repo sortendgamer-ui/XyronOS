@@ -7,6 +7,42 @@ and aren't silently forgotten. An item here is not scheduled work —
 see [TODO.md](TODO.md) for feature requests and [ROADMAP.md](ROADMAP.md)
 for what's actually planned.
 
+## Bootloader (Phase 2, frozen)
+
+### Page-table pages the bootloader itself builds are not address-capped
+**Where:** `boot/paging.c`, `AllocateZeroedPage` (used for the PML4,
+identity-map PDPT/PDs, and the higher-half kernel PDPT/PD).
+
+ADR-005's Part 4 work capped every allocation the kernel would need to
+directly dereference after the jump (kernel image, memory map buffer,
+`BootInfo`, kernel stack) below `IDENTITY_MAP_LIMIT` (4 GiB) via
+`AllocateMaxAddress`. The page-table pages `paging.c` builds for
+itself were not included in that capping — they use unconstrained
+`AllocatePages(AllocateAnyPages, ...)`.
+
+This matters because the kernel's virtual memory manager
+(`kernel/src/mm/vmm.rs`, Phase 3) needs to walk and modify these same
+tables (reading CR3, following PML4→PDPT→PD→PT pointers) — which
+requires dereferencing their physical addresses through the identity
+map, exactly like any other kernel-visible allocation. If any of these
+pages were ever allocated above 4 GiB by firmware, the VMM would have
+no way to reach them.
+
+**Status: never observed to actually happen.** Every boot test run
+against this project (QEMU/OVMF, the only platform tested so far) has
+placed every page-table page well under 4 GiB. Per this project's own
+rule — the bootloader is frozen and not modified without an actual,
+observed bug — this is NOT being fixed in `boot/paging.c`
+speculatively. Instead, the kernel's VMM defensively checks every
+page-table physical address it encounters against
+`IDENTITY_MAP_LIMIT` before dereferencing it, and returns a clear
+error (rather than silently misbehaving or corrupting memory) if the
+assumption is ever violated. If that error is ever actually observed
+on real hardware, THAT would be the documented bug justifying a
+`boot/paging.c` change (capping its allocations the same way Part 4's
+other allocations already are) — recorded here so the fix is obvious
+if that day comes.
+
 ## Memory Manager (Phase 3)
 
 ### Frame allocator bitmap is sized off the entire memory map, including MMIO

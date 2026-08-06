@@ -9,6 +9,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Planned (Phase 3, next subsystem)
 - Interrupts/exceptions: GDT, IDT, exception handlers.
 
+## [v0.4.0] - 2026-08-04
+### Phase 3 (Kernel) — Memory Manager subsystem: virtual memory manager implemented, tested, and boot-verified.
+### Added
+- `kernel/src/mm/virt_addr.rs` — `VirtAddr` newtype, decomposing an
+  address into its four 9-bit page-table indices (PML4/PDPT/PD/PT)
+  plus a 12-bit page offset, per the x86_64 4-level paging layout.
+  5 unit tests, including a cross-check against ADR-005's own by-hand
+  PML4=511/PDPT=510 derivation for `KERNEL_VIRTUAL_BASE`.
+- `kernel/src/mm/page_table_entry.rs` — `PageTableEntry` (raw page
+  table entry bit wrapper: Present/Writable/NoExecute, physical
+  address in bits 51:12) and `PageFlags`. 5 unit tests.
+- `kernel/src/mm/vmm.rs` — `VirtualMemoryManager`: `init`/`map`/
+  `unmap`/`translate`/`flags_at`, a 4-level page-table walker that
+  creates intermediate tables on demand, reusing the bootloader's
+  existing PML4 (no second CR3 switch). Sets `EFER.NXE` itself rather
+  than assuming firmware already did (required for `NO_EXECUTE` to be
+  meaningful, not reserved-bit-violate). Invalidates the TLB (`invlpg`)
+  after every `map`/`unmap`. Every page-table physical address is
+  checked against `IDENTITY_MAP_LIMIT` before being dereferenced.
+- `FrameAllocator::allocate_below()` — new capability (not a change to
+  existing `allocate()`/`deallocate()` behavior) letting the VMM
+  request a frame it can directly dereference for a new page-table
+  page. 2 new unit tests.
+- Boot-time integration self-test (`run_vmm_boot_self_test` in
+  `main.rs`): `translate()` verified against the kernel's own running
+  code (proving the walker correctly handles the bootloader's existing
+  2 MiB huge-page higher-half mapping — "higher-half kernel mapping
+  compatibility," verified concretely); a fresh 4 KiB mapping created,
+  written through, read back, its stored permission flags checked via
+  `flags_at()`, then unmapped; both `map()`-already-mapped and
+  `unmap()`-already-unmapped error paths exercised.
+- Design decisions settled before implementation, per instruction:
+  `docs/kernel/MEMORY_MANAGER_DESIGN.md`'s Virtual Memory Manager
+  section gained a "Concrete decisions" subsection covering all of the
+  above plus what is explicitly NOT verified this milestone (hardware
+  enforcement of `WRITABLE`/`NO_EXECUTE` — requires a page-fault
+  handler that doesn't exist until the next subsystem; stated, not
+  silently skipped).
+- `TECH_DEBT.md`: new entry documenting that `boot/paging.c`'s own
+  page-table pages are allocated via unconstrained
+  `AllocatePages(AllocateAnyPages, ...)`, not capped below
+  `IDENTITY_MAP_LIMIT` the way Part 4's other allocations are. Never
+  observed to actually cause a failure; the bootloader is frozen and
+  not modified speculatively — the VMM instead defensively checks
+  every page-table address it encounters and fails cleanly rather than
+  assuming the address is reachable.
+### Verified
+- Real kernel build: zero warnings. Test build: zero warnings.
+- Unit tests: 21/21 passing on host target (up from 9).
+- Full boot chain verified end to end under QEMU/OVMF against the
+  **unmodified** Phase 2 bootloader: kernel jumped to at
+  `0xFFFFFFFF80001110`, CR3 `0xE655000`, every frame-allocator AND
+  virtual-memory-manager self-test check passed, including the
+  higher-half-compatibility translate() check against the kernel's own
+  running code.
+- `boot/` has zero changes this milestone — frozen, no bug found
+  requiring a change.
+
 ## [v0.3.0] - 2026-08-02
 ### Phase 3 (Kernel) — Memory Manager subsystem: physical frame allocator implemented, tested, and boot-verified.
 ### Added

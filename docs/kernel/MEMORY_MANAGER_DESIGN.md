@@ -1,9 +1,10 @@
 # Kernel Memory Manager — Design
 
 Status: **Physical frame allocator implemented and boot-tested
-(`kernel/src/mm/`). Virtual memory manager and kernel heap: designed,
-not yet implemented** — see ADR-006's initialization order for why
-they come later, as their own subsystem parts.
+(`kernel/src/mm/`). Virtual memory manager implemented and boot-tested
+this milestone. Kernel heap: designed, not yet implemented** — see
+ADR-006's initialization order for why it comes later, as its own
+subsystem part.
 
 ## Goals
 1. Turn the raw UEFI memory map handed off in `BootInfo`
@@ -90,6 +91,73 @@ this is where the frame allocator's simple "any free frame" allocation
 (no alignment stronger than 4 KiB required, unlike the bootloader's
 2 MiB requirement) is sufficient, no huge-page alignment logic needed
 here.
+
+**Concrete decisions, settled during implementation:**
+
+- **`VirtAddr` mirrors `PhysAddr`'s newtype pattern** (`mm/virt_addr.rs`):
+  a wrapped `u64` with methods decomposing it into the four 9-bit
+  page-table indices (PML4/PDPT/PD/PT) plus a 12-bit page offset, per
+  the x86_64 architecture's 4-level paging layout — an external
+  hardware fact, not a design choice, same category as `elf.h`'s
+  structures or the UEFI struct definitions in `boot/`.
+- **`PageTableEntry` (`mm/page_table_entry.rs`) wraps the raw `u64`
+  entry format** (Present/Writable/NoExecute bits, physical address in
+  bits 51:12) per the x86_64 architecture's documented page-table
+  entry layout (Intel SDM Vol. 3A / AMD64 APM Vol. 2) — independently
+  implemented from the specification, the same relationship
+  `boot/paging.c` already has to this same hardware fact.
+- **`PageFlags` currently exposes `WRITABLE` and `NO_EXECUTE`.** No
+  `USER`/`SUPERVISOR` distinction yet — no ring-3 code exists to make
+  it meaningful (that is scheduler/process-model territory,
+  `SCHEDULER_DESIGN.md`, not this subsystem).
+- **`NO_EXECUTE` requires `EFER.NXE` to be set, or the CPU treats bit
+  63 as reserved-must-be-zero and raises a page-fault-adjacent
+  reserved-bit violation the instant such an entry is walked.** UEFI
+  firmware does not reliably guarantee this bit is already enabled —
+  relying on it being enabled by coincidence would be exactly the kind
+  of unverified assumption the project's rules prohibit. The virtual
+  memory manager's `init` therefore reads the `EFER` MSR and sets the
+  NXE bit itself (idempotent — a no-op if firmware already set it)
+  before any `NO_EXECUTE` mapping can be created.
+- **`map`/`unmap` invalidate the TLB entry for the affected virtual
+  address (`invlpg`) after modifying the page table.** Without this,
+  the CPU may continue using a stale cached translation for that
+  address after the page table itself has already changed — a subtle,
+  easy-to-miss correctness requirement, not an optional optimization.
+- **Page-table physical addresses (CR3, and every intermediate table
+  pointer the walker follows) are checked against
+  `IDENTITY_MAP_LIMIT` before being dereferenced, and `map`/`unmap`/
+  `translate` return an error rather than dereferencing an
+  out-of-range address.** This exists because `boot/paging.c` allocates
+  its own page-table pages via unconstrained `AllocatePages(AllocateAnyPages, ...)`
+  — not capped below `IDENTITY_MAP_LIMIT` the way Part 4's *other*
+  allocations were (kernel image, memory map buffer, BootInfo, kernel
+  stack; see ADR-005). In every observed boot (QEMU/OVMF) these pages
+  have landed well under 4 GiB, and `boot/` is frozen — per this
+  project's own rule, unmodified unless an actual bug is found, and
+  none has been found: nothing has ever actually failed. This is
+  therefore recorded as a documented, currently-theoretical risk in
+  `TECH_DEBT.md`, not fixed in `boot/paging.c` speculatively — but the
+  kernel's own new code does not blindly trust the assumption either;
+  it checks and fails cleanly if the assumption is ever violated.
+- **Testing split, matching the frame allocator's own precedent:**
+  `VirtAddr`'s index decomposition and `PageTableEntry`'s bit
+  manipulation are pure logic, host-unit-tested. `map`/`unmap`/
+  `translate`'s actual page-table manipulation requires real physical
+  memory and the real frame allocator, so — like `FrameAllocator::init`
+  itself — it is verified via a boot-time integration self-test
+  instead (round-trip map → write through the mapping → read back →
+  unmap → confirm `translate` now returns `None`).
+- **What is implemented but NOT verified this milestone, stated
+  explicitly rather than assumed:** `NO_EXECUTE` and the absence of
+  `WRITABLE` are set correctly in the page table entry, and
+  `translate()` can be used to confirm the stored flags round-trip
+  correctly. Whether the CPU actually *enforces* them (traps a write
+  to a non-writable page, traps execution of a no-execute page) cannot
+  be verified yet — that requires a page-fault exception handler,
+  which does not exist until the next kernel subsystem (interrupts/
+  exceptions). The boot self-test states this limitation in its own
+  output rather than silently omitting the check.
 
 ## Kernel heap allocator
 A single, kernel-wide `GlobalAlloc` implementation backed by a fixed

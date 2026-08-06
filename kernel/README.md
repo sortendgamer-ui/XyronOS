@@ -130,6 +130,20 @@ Running frame allocator boot self-test...
 Frame allocator boot self-test: ALL CHECKS PASSED.
 
 MEMORY MANAGER SUBSYSTEM: physical frame allocator verified.
-Virtual memory manager, kernel heap: not yet implemented (see docs/kernel/).
+[OK] Virtual memory manager initialized (EFER.NXE set, reusing the bootloader's existing PML4 at 0x...).
+
+Running virtual memory manager boot self-test...
+  [OK] translate() correctly resolves an address inside the bootloader's existing higher-half (2 MiB huge-page) kernel mapping.
+  [OK] map() succeeded for a fresh page in the (previously unmapped) kernel heap region.
+  [OK] Stored permission flags match exactly what map() was asked for.
+  [OK] Write-then-read-back through the new mapping round-tripped correctly.
+  [OK] translate() reports the correct physical frame for the new mapping.
+  [OK] map() correctly rejects an already-mapped address.
+  [OK] unmap() succeeded; translate() now correctly reports no mapping.
+  [OK] unmap() correctly rejects an already-unmapped address.
+Virtual memory manager boot self-test: ALL CHECKS PASSED.
+
+MEMORY MANAGER SUBSYSTEM: virtual memory manager verified.
+Kernel heap allocator: not yet implemented (see docs/kernel/).
 Halting.
 ```

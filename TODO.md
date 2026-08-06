@@ -59,3 +59,11 @@ in progress.
   `docs/kernel/SCHEDULER_DESIGN.md` explicitly defers this until some
   task actually needs floating point; the kernel target spec disables
   SSE entirely for now so this isn't a silent gap.
+- **Verify hardware enforcement of page permissions (`WRITABLE`/
+  `NO_EXECUTE`).** The virtual memory manager (`kernel/src/mm/vmm.rs`)
+  sets these bits correctly (unit-tested, and boot-verified to be
+  stored correctly via `flags_at()`), but whether the CPU actually
+  traps a write to a non-writable page or execution of a no-execute
+  page cannot be verified until a page-fault exception handler exists
+  — the very next kernel subsystem. Add this check to that
+  subsystem's own boot self-test once it lands.

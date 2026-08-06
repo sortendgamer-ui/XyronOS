@@ -18,7 +18,7 @@ use crate::mm::phys_addr::{PhysAddr, FRAME_SIZE};
 /// kept in sync manually, the same situation as `boot_info.rs`
 /// mirroring `boot_info.h` — no shared build step exists between the
 /// bootloader and kernel to enforce this automatically.
-const IDENTITY_MAP_LIMIT: u64 = 0x1_0000_0000;
+pub(crate) const IDENTITY_MAP_LIMIT: u64 = 0x1_0000_0000;
 
 /// Sanity bound on bitmap size, covering roughly 2 TiB of tracked RAM
 /// at 1 bit per 4 KiB frame. Real hardware and QEMU test
@@ -291,6 +291,31 @@ impl FrameAllocator {
         Ok(())
     }
 
+    /// Allocate one free frame whose address is strictly below `limit`.
+    ///
+    /// Needed by the virtual memory manager (`mm/vmm.rs`): a new
+    /// page-table page must be a physical address the kernel can
+    /// directly write through the identity map to initialize (zero it,
+    /// then write entries into it) — `allocate()` alone offers no such
+    /// guarantee, since this allocator tracks the *entire* physical
+    /// memory map, including frames above `IDENTITY_MAP_LIMIT` that
+    /// are valid to allocate (bookkeeping-wise) but not yet directly
+    /// dereferenceable by any code that doesn't have another path to
+    /// them — see `docs/kernel/MEMORY_MANAGER_DESIGN.md`.
+    ///
+    /// Same O(n) worst-case scan as `allocate()`, over the restricted
+    /// prefix of frames below `limit` only.
+    pub fn allocate_below(&mut self, limit: PhysAddr) -> Option<PhysAddr> {
+        let bound = core::cmp::min(self.total_frames, limit.frame_number());
+        for frame in 0..bound {
+            if self.is_free(frame) {
+                self.mark_used(frame);
+                return Some(PhysAddr::from_frame_number(frame));
+            }
+        }
+        None
+    }
+
     pub fn total_frames(&self) -> usize {
         self.total_frames
     }
@@ -393,5 +418,43 @@ mod tests {
         }
         assert_eq!(seen.len(), 4);
         assert_eq!(alloc.allocate(), None);
+    }
+
+    #[test]
+    fn allocate_below_only_returns_frames_under_the_limit() {
+        let mut alloc = test_allocator(16);
+        // limit.frame_number() == 8: frames 0..8 are eligible,
+        // frames 8..16 are not, regardless of free/used state.
+        let limit = PhysAddr::from_frame_number(8);
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..8 {
+            let addr = alloc
+                .allocate_below(limit)
+                .expect("8 frames should be available below the limit");
+            assert!(
+                addr.frame_number() < 8,
+                "allocate_below returned a frame at or above its limit"
+            );
+            seen.insert(addr.frame_number());
+        }
+        assert_eq!(seen.len(), 8, "allocate_below returned a frame twice");
+        // Every eligible frame is now used; a 9th call must fail even
+        // though frames 8..16 are still entirely free — allocate_below
+        // must never fall back to allocating above the limit.
+        assert_eq!(alloc.allocate_below(limit), None);
+    }
+
+    #[test]
+    fn allocate_below_respects_frames_already_used_by_allocate() {
+        let mut alloc = test_allocator(4);
+        let limit = PhysAddr::from_frame_number(4);
+        let taken = alloc.allocate().unwrap(); // may take any frame 0..4
+        let below = alloc
+            .allocate_below(limit)
+            .expect("3 frames should remain");
+        assert_ne!(
+            taken, below,
+            "allocate_below returned a frame allocate() already gave out"
+        );
     }
 }

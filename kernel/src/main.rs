@@ -34,7 +34,7 @@ use arch::x86_64::serial;
 #[cfg(not(test))]
 use boot_info::BootInfo;
 #[cfg(not(test))]
-use mm::FrameAllocator;
+use mm::{FrameAllocator, PageFlags, VirtAddr, VirtualMemoryManager};
 
 /// Halt forever via `hlt` — the same idle primitive
 /// `boot/main.c`/`tests/kernel_stub/kernel_stub.c` both use, not a
@@ -143,9 +143,159 @@ fn run_frame_allocator_boot_self_test(allocator: &mut FrameAllocator) -> bool {
     true
 }
 
+/// Boot-time integration self-test for the virtual memory manager —
+/// requirement 6/7 ("comprehensive unit tests and boot-time
+/// self-tests"). `map`/`unmap`/`translate`'s actual page-table
+/// manipulation needs real physical memory and the real frame
+/// allocator (see `docs/kernel/MEMORY_MANAGER_DESIGN.md`'s testing
+/// split), so — like the frame allocator's own boot self-test — this
+/// runs live rather than on the host target. Returns `true` if every
+/// check passed.
+///
+/// Explicitly NOT verified here (stated rather than silently skipped,
+/// per the instruction to never fake verification): whether the CPU
+/// actually enforces the `WRITABLE`/`NO_EXECUTE` flags this test sets
+/// (a real write-protection or execute-protection fault). That
+/// requires a page-fault exception handler, which does not exist
+/// until the next kernel subsystem.
+#[cfg(not(test))]
+fn run_vmm_boot_self_test(vmm: &mut VirtualMemoryManager, allocator: &mut FrameAllocator, boot_info: &BootInfo) -> bool {
+    serial::write_str("\r\nRunning virtual memory manager boot self-test...\r\n");
+
+    // Check 1: translate() against the kernel's OWN already-running
+    // code — proves the walker correctly handles the bootloader's
+    // existing 2 MiB huge-page higher-half mapping (ADR-005), not
+    // just newly created 4 KiB leaves. "Higher-half kernel mapping
+    // compatibility," verified concretely rather than assumed.
+    let self_fn_vaddr = run_vmm_boot_self_test as *const () as u64;
+    match vmm.translate(VirtAddr::new(self_fn_vaddr)) {
+        Some(phys) => {
+            let in_range = phys.as_u64() >= boot_info.kernel_physical_base
+                && phys.as_u64() < boot_info.kernel_physical_base + boot_info.kernel_size_bytes;
+            if !in_range {
+                serial::write_str("  FAIL: translate() of kernel code address landed outside the kernel's own physical image.\r\n");
+                return false;
+            }
+        }
+        None => {
+            serial::write_str("  FAIL: translate() could not resolve a kernel code address (huge-page walk broken).\r\n");
+            return false;
+        }
+    }
+    serial::write_str("  [OK] translate() correctly resolves an address inside the bootloader's existing higher-half (2 MiB huge-page) kernel mapping.\r\n");
+
+    // Check 2: map() a fresh 4 KiB page into the (currently entirely
+    // unused) kernel heap region from ADR-002, write a known pattern
+    // through the new mapping, and read it back.
+    const TEST_VADDR: u64 = 0xFFFF_8800_0000_0000; // kernel heap region base, ADR-002
+    let test_frame = match allocator.allocate() {
+        Some(f) => f,
+        None => {
+            serial::write_str("  FAIL: frame allocator exhausted before the VMM self-test could run.\r\n");
+            return false;
+        }
+    };
+
+    if let Err(_e) = vmm.map(allocator, VirtAddr::new(TEST_VADDR), test_frame, PageFlags::read_write()) {
+        serial::write_str("  FAIL: map() of a fresh page in the kernel heap region failed.\r\n");
+        return false;
+    }
+    serial::write_str("  [OK] map() succeeded for a fresh page in the (previously unmapped) kernel heap region.\r\n");
+
+    const TEST_PATTERN: u64 = 0xDEAD_BEEF_CAFE_BABE;
+    // SAFETY: TEST_VADDR was just mapped, read-write, to test_frame by
+    // the map() call above — writing and reading back a u64 at the
+    // start of that now-valid page.
+    unsafe {
+        core::ptr::write_volatile(TEST_VADDR as *mut u64, TEST_PATTERN);
+        let readback = core::ptr::read_volatile(TEST_VADDR as *const u64);
+        if readback != TEST_PATTERN {
+            serial::write_str("  FAIL: read-back through the new mapping did not match what was written.\r\n");
+            return false;
+        }
+    }
+    serial::write_str("  [OK] Write-then-read-back through the new mapping round-tripped correctly.\r\n");
+
+    // Check 3a: the permission flags map() was given must be exactly
+    // what's stored in the page table entry — this is what makes
+    // "page permissions" a verified end-to-end property, not just
+    // something PageTableEntry's own isolated unit tests trust.
+    match vmm.flags_at(VirtAddr::new(TEST_VADDR)) {
+        Some(flags) if flags.writable && !flags.no_execute => {}
+        Some(_) => {
+            serial::write_str("  FAIL: stored permission flags do not match what map() was asked for.\r\n");
+            return false;
+        }
+        None => {
+            serial::write_str("  FAIL: flags_at() found no mapping immediately after a successful map().\r\n");
+            return false;
+        }
+    }
+    serial::write_str("  [OK] Stored permission flags match exactly what map() was asked for.\r\n");
+
+    // Check 3: translate() must report the exact frame map() was
+    // given.
+    match vmm.translate(VirtAddr::new(TEST_VADDR)) {
+        Some(phys) if phys == test_frame => {}
+        _ => {
+            serial::write_str("  FAIL: translate() did not report the frame map() was given.\r\n");
+            return false;
+        }
+    }
+    serial::write_str("  [OK] translate() reports the correct physical frame for the new mapping.\r\n");
+
+    // Check 4: mapping the same address twice must fail — a real,
+    // meaningful error path, not just a happy-path check.
+    let second_frame = allocator.allocate();
+    if let Some(sf) = second_frame {
+        let result = vmm.map(allocator, VirtAddr::new(TEST_VADDR), sf, PageFlags::read_write());
+        allocator.deallocate(sf).ok();
+        if result.is_ok() {
+            serial::write_str("  FAIL: map() allowed mapping an already-mapped address.\r\n");
+            return false;
+        }
+    }
+    serial::write_str("  [OK] map() correctly rejects an already-mapped address.\r\n");
+
+    // Check 5: unmap() must return the same frame that was mapped,
+    // and translate() must report None afterward.
+    match vmm.unmap(VirtAddr::new(TEST_VADDR)) {
+        Ok(phys) if phys == test_frame => {}
+        _ => {
+            serial::write_str("  FAIL: unmap() did not return the originally-mapped frame.\r\n");
+            return false;
+        }
+    }
+    if vmm.translate(VirtAddr::new(TEST_VADDR)).is_some() {
+        serial::write_str("  FAIL: translate() still resolves the address after unmap().\r\n");
+        return false;
+    }
+    serial::write_str("  [OK] unmap() succeeded; translate() now correctly reports no mapping.\r\n");
+
+    // Check 6: unmapping an already-unmapped address must fail.
+    if vmm.unmap(VirtAddr::new(TEST_VADDR)).is_ok() {
+        serial::write_str("  FAIL: unmap() succeeded on an address that was already unmapped.\r\n");
+        return false;
+    }
+    serial::write_str("  [OK] unmap() correctly rejects an already-unmapped address.\r\n");
+
+    if allocator.deallocate(test_frame).is_err() {
+        serial::write_str("  FAIL: could not free the test frame back to the allocator after unmap().\r\n");
+        return false;
+    }
+
+    serial::write_str("  NOTE: WRITABLE/NO_EXECUTE flags are set correctly (see mm/page_table_entry.rs\r\n");
+    serial::write_str("        unit tests) but hardware ENFORCEMENT of them is not verified here —\r\n");
+    serial::write_str("        that requires a page-fault handler, which does not exist yet.\r\n");
+    serial::write_str("Virtual memory manager boot self-test: ALL CHECKS PASSED.\r\n");
+    true
+}
+
 #[cfg(not(test))]
 #[no_mangle]
 pub extern "C" fn kernel_main(boot_info_ptr: *const BootInfo) -> ! {
+
+
     // Step 1 (ADR-006 boot flow): early debug output, so every step
     // after this can report failure somewhere observable.
     serial::init();
@@ -223,7 +373,28 @@ pub extern "C" fn kernel_main(boot_info_ptr: *const BootInfo) -> ! {
     }
 
     serial::write_str("\r\nMEMORY MANAGER SUBSYSTEM: physical frame allocator verified.\r\n");
-    serial::write_str("Virtual memory manager, kernel heap: not yet implemented (see docs/kernel/).\r\n");
+
+    // Virtual memory manager bring-up — still part of ADR-006's step 3
+    // (memory manager), the next piece of this same subsystem per
+    // docs/kernel/MEMORY_MANAGER_DESIGN.md.
+    //
+    // SAFETY: called exactly once, after the frame allocator is
+    // initialized (satisfied above), with the bootloader's page
+    // tables (ADR-005) still active in CR3 — nothing in this kernel
+    // has changed CR3 since the bootloader's jump.
+    let mut vmm = unsafe { VirtualMemoryManager::init() };
+    serial::write_str("[OK] Virtual memory manager initialized (EFER.NXE ");
+    serial::write_str("set, reusing the bootloader's existing PML4 at 0x");
+    serial::write_hex64(vmm.pml4_phys().as_u64());
+    serial::write_str(").\r\n");
+
+    if !run_vmm_boot_self_test(&mut vmm, &mut frame_allocator, boot_info) {
+        serial::write_str("FATAL: virtual memory manager boot self-test failed.\r\n");
+        halt();
+    }
+
+    serial::write_str("\r\nMEMORY MANAGER SUBSYSTEM: virtual memory manager verified.\r\n");
+    serial::write_str("Kernel heap allocator: not yet implemented (see docs/kernel/).\r\n");
     serial::write_str("Halting.\r\n");
 
     halt()
