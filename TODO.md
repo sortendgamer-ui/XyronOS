@@ -12,8 +12,8 @@ in progress.
 
 ## Recorded feature requests (not yet scheduled beyond their listed phase)
 
-- **AI Assistant integrated into the OS** — Phase 13 per the original
-  20-phase plan. Not started; no design work done yet.
+- **AI Assistant integrated into the OS** ("NeoAI") — Phase 13 per the
+  original 20-phase plan. Not started; no design work done yet.
 - **Graphical desktop environment / window manager** — Phases 7-9.
   Not started.
 - **Gaming APIs** (2D/3D acceleration hooks) — Phase 14. Not started.
@@ -22,24 +22,43 @@ in progress.
   Phase 4. Not started; `docs/adr/ADR-006-kernel-architecture.md`'s
   "Early debug output vs. Phase 4 drivers" section explains why the
   current serial code is NOT this.
-- **Networking stack** — Phase 6. Not started.
-- **Security model** (capability-based permissions, signed packages,
-  process isolation) — Phase 15. Not started. Note: the current
-  kernel panic policy (ADR-006) is "halt the whole machine" precisely
-  because no process isolation exists yet to make anything less
-  drastic meaningful — this is expected to change once Phase 15 (or
-  the scheduler's process model, whichever lands first) exists.
+- **Networking stack** ("Neo Connect") — Phase 6. Not started.
+- **Security model** ("Neo Defender" — capability-based permissions,
+  signed packages, process isolation) — Phase 15. Not started. Note:
+  the current kernel panic policy (ADR-006) is "halt the whole
+  machine" precisely because no process isolation exists yet to make
+  anything less drastic meaningful — this is expected to change once
+  Phase 15 (or the scheduler's process model, whichever lands first)
+  exists.
 - **Face unlock / biometric authentication** — not yet assigned to a
   specific phase in the original plan; would depend on Phase 15
-  (Security) and Phase 4 (a camera/sensor driver) both existing first.
-  Recorded here as a request, not committed to any phase yet.
-- **Package manager** — Phase 11. Not started.
+  (Security / "Neo Defender") and Phase 4 (a camera/sensor driver)
+  both existing first. Recorded here as a request, not committed to
+  any phase yet.
+- **Package manager** ("Neo Store") — Phase 11. Not started.
 - **App store / software distribution beyond the package manager
-  itself** — not in the original 20-phase plan; recorded as a request
-  for consideration once Phase 11 (Package Manager) is further along.
+  itself** ("Neo Store") — not in the original 20-phase plan; recorded
+  as a request for consideration once Phase 11 (Package Manager) is
+  further along.
+- **Update mechanism** ("Neo Update") — not yet assigned to a specific
+  phase; would depend on Phase 11 (Package Manager) existing first.
+- **File manager / explorer application** ("Neo Explorer") — Phase 10
+  (Built-in Applications). Not started.
+- **Settings / system configuration application** ("Neo Settings") —
+  Phase 10 (Built-in Applications). Not started.
+- **Web browser** ("Neo Browser") — Phase 10 (Built-in Applications)
+  at minimum a basic HTML/HTTP renderer per `docs/VISION.md`'s v1
+  scope; a full engine is out of scope for v1. Not started.
 - **Cloud services integration** — Phase 16. Not started.
 - **Compiler toolchain** (the OS's own, for building userland
   programs) — Phase 12. Not started.
+
+*Note on branding:* the names above (NeoAI, Neo Store, Neo Browser,
+Neo Defender, Neo Connect, Neo Update, Neo Explorer, Neo Settings) are
+the official product names decided as part of the project's rename
+from XyronOS to NeoastrenOS. None of these features exist yet — the
+names are recorded now so the correct name is used from each
+feature's first commit, rather than requiring a rename later.
 
 ## Known follow-ups from completed subsystems (smaller-scoped than the above)
 

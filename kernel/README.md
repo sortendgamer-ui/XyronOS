@@ -24,7 +24,7 @@ this specific boot's real data — see "Boot-testing the kernel" below).
 
 ```bash
 cd kernel
-cargo +nightly test --target x86_64-unknown-linux-gnu --bin xyronos-kernel
+cargo +nightly test --target x86_64-unknown-linux-gnu --bin neoastrenos-kernel
 # (substitute your actual host triple if different — `rustc -vV | grep host`)
 ```
 No `-Z build-std` flag here: the host target already has a prebuilt
@@ -69,7 +69,7 @@ contributor hitting the same environment isn't surprised:
    ```bash
    cd kernel
    RUSTC_BOOTSTRAP=1 cargo build --release -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem
-   RUSTC_BOOTSTRAP=1 cargo test --target x86_64-unknown-linux-gnu --bin xyronos-kernel
+   RUSTC_BOOTSTRAP=1 cargo test --target x86_64-unknown-linux-gnu --bin neoastrenos-kernel
    ```
 2. **apt's `rust-src` package ships without a `Cargo.lock`** for the
    `core`/`alloc` workspace (rustup's `rust-src` component includes
@@ -103,7 +103,7 @@ cd kernel && RUSTC_BOOTSTRAP=1 cargo build --release -Z build-std=core,alloc -Z 
 mkdir -p build/esp/EFI/BOOT
 cp build/BOOTX64.EFI build/esp/EFI/BOOT/BOOTX64.EFI
 cp boot/testdata/BOOTINFO.TXT build/esp/BOOTINFO.TXT
-cp kernel/target/x86_64-os/release/xyronos-kernel build/esp/KERNEL.ELF
+cp kernel/target/x86_64-os/release/neoastrenos-kernel build/esp/KERNEL.ELF
 cp /usr/share/OVMF/OVMF_CODE_4M.fd build/OVMF_CODE.fd
 cp /usr/share/OVMF/OVMF_VARS_4M.fd build/OVMF_VARS.fd
 

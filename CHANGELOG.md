@@ -9,6 +9,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Planned (Phase 3, next subsystem)
 - Interrupts/exceptions: GDT, IDT, exception handlers.
 
+## [Project Rename] - 2026-08-06
+### Renamed the project from XyronOS to NeoastrenOS — branding-only, no functional or architectural change.
+No `VERSION` bump: nothing about the system's behavior, build output,
+or boot sequence changed — verified by a full clean rebuild and boot
+test after the rename, with output identical to the pre-rename run
+except for the brand text itself. See `git log` for the exact commit;
+this entry has no corresponding version tag for that reason (see
+`ROADMAP.md`'s versioning note).
+### Changed
+- Every occurrence of "XyronOS" replaced with "NeoastrenOS" across all
+  git-tracked files (verified via full-repository search: bootloader
+  boot-screen and serial output strings in `boot/main.c`, the test
+  fixture text in `boot/testdata/BOOTINFO.TXT`, the kernel's own boot
+  banner in `kernel/src/main.rs`, the stub kernel fixture's banner in
+  `tests/kernel_stub/kernel_stub.c`, and the kernel package's name/
+  author/description in `kernel/Cargo.toml`, which also renames the
+  compiled binary from `xyronos-kernel` to `neoastrenos-kernel` —
+  every reference to that binary path/name updated to match across
+  `README.md`, `kernel/README.md`, and all four CI workflow files).
+- `TODO.md` — the future product brand names decided as part of this
+  rename (NeoAI, Neo Store, Neo Browser, Neo Defender, Neo Connect,
+  Neo Update, Neo Explorer, Neo Settings) recorded against the
+  relevant not-yet-implemented feature requests, so each is built
+  under its correct name from its first commit rather than needing a
+  rename later. None of these features exist yet — nothing was
+  actually renamed here, only named in advance.
+### Verified unchanged
+- `README.md`, `ROADMAP.md`, `ARCHITECTURE.md`, `CONTRIBUTING.md`,
+  `SECURITY.md`, `CODE_OF_CONDUCT.md`, `LICENSE`, and every file under
+  `docs/adr/` and `docs/kernel/` — a full-repository search confirmed
+  none of these ever contained the string "XyronOS" (the project was
+  referred to generically, e.g. "this project," "the OS," throughout),
+  so nothing needed changing in them. ADR numbering, semantic version
+  history (VERSION, existing git tags), and all prior CHANGELOG
+  entries are unmodified.
+- Full clean rebuild (bootloader + kernel), 21/21 unit tests, and a
+  full QEMU/OVMF boot test all re-verified after the rename, with
+  identical pass/fail results to the pre-rename v0.4.0 state.
+### Known limitation
+- The GitHub repository itself
+  (`github.com/sortendgamer-ui/XyronOS`) cannot be renamed from this
+  environment — that requires the repository owner's action on
+  GitHub (Settings → repository name) and updating any local `git
+  remote` URL afterward. Everything renameable from within the
+  repository's own contents has been renamed; the external repo name
+  is outside this change's reach and is not claimed to be done.
+
 ## [v0.4.0] - 2026-08-04
 ### Phase 3 (Kernel) — Memory Manager subsystem: virtual memory manager implemented, tested, and boot-verified.
 ### Added

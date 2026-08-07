@@ -21,7 +21,7 @@ void KernelEntry(BOOT_INFO *info)
     SerialInit();
 
     SerialWriteString("\r\n================================================\r\n");
-    SerialWriteString("XyronOS Kernel Stub - Phase 2 Part 4 test fixture\r\n");
+    SerialWriteString("NeoastrenOS Kernel Stub - Phase 2 Part 4 test fixture\r\n");
     SerialWriteString("================================================\r\n");
 
     /* Validate the handoff before trusting anything else in it — see

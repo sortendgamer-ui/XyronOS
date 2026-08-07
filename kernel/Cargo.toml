@@ -1,9 +1,9 @@
 [package]
-name = "xyronos-kernel"
+name = "neoastrenos-kernel"
 version = "0.1.0"
 edition = "2021"
-authors = ["XyronOS Project"]
-description = "XyronOS kernel core — Rust no_std, per ADR-001/ADR-006"
+authors = ["NeoastrenOS Project"]
+description = "NeoastrenOS kernel core — Rust no_std, per ADR-001/ADR-006"
 
 # No dependencies yet — the skeleton uses only `core`. `alloc` is
 # enabled via build-std (.cargo/config.toml) for when the memory

@@ -72,7 +72,7 @@ EFI_STATUS EFIAPI EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
     BOOLEAN part2Success = FALSE;
 
     ConOut->ClearScreen(ConOut);
-    ConOut->OutputString(ConOut, L"XyronOS Bootloader \x2014 Phase 2, Part 4\r\n");
+    ConOut->OutputString(ConOut, L"NeoastrenOS Bootloader \x2014 Phase 2, Part 4\r\n");
     ConOut->OutputString(ConOut, L"Testing Simple File System read pipeline...\r\n\r\n");
 
     /* ===================== Part 2 (unchanged) ===================== */
@@ -257,7 +257,7 @@ closeFile:
     bootInfo->MemoryMapEntryCount = memMap.EntryCount;
 
     SerialInit();
-    SerialWriteString("\r\nXyronOS Bootloader - Phase 2 Part 4\r\n");
+    SerialWriteString("\r\nNeoastrenOS Bootloader - Phase 2 Part 4\r\n");
     SerialWriteString("ExitBootServices succeeded. Boot Services have been terminated.\r\n");
     SerialWriteString("BootInfo populated. Jumping to kernel entry point: 0x");
     SerialWriteHex64(kernel.EntryPointVirtual);

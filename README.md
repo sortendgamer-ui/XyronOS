@@ -1,4 +1,4 @@
-# Original OS Project
+# NeoastrenOS
 
 An operating system built completely from scratch — no Linux, Windows,
 macOS, or BSD source code anywhere in the tree. Where we must interoperate
@@ -61,7 +61,7 @@ cd kernel && cargo +nightly build --release && cd ..
 mkdir -p build/esp/EFI/BOOT
 cp build/BOOTX64.EFI build/esp/EFI/BOOT/BOOTX64.EFI
 cp boot/testdata/BOOTINFO.TXT build/esp/BOOTINFO.TXT
-cp kernel/target/x86_64-os/release/xyronos-kernel build/esp/KERNEL.ELF
+cp kernel/target/x86_64-os/release/neoastrenos-kernel build/esp/KERNEL.ELF
 cp /usr/share/OVMF/OVMF_CODE_4M.fd build/OVMF_CODE.fd
 cp /usr/share/OVMF/OVMF_VARS_4M.fd build/OVMF_VARS.fd
 qemu-system-x86_64 -machine q35 -m 256M \

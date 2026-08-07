@@ -79,3 +79,8 @@ Each completed part/milestone bumps the alpha version
 when Phase 2 (Bootloader) is fully complete and the bootloader can load
 and hand off to a real kernel. Major version `1.0.0` is reserved for
 Phase 20 (Stable Release), per [README.md](README.md)'s SemVer note.
+
+Administrative or branding-only changes that don't alter behavior,
+build output, or the boot sequence (e.g. the XyronOS → NeoastrenOS
+project rename) do not bump `VERSION` — see `CHANGELOG.md`'s
+`[Project Rename]` entry for that specific example.

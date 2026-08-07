@@ -300,7 +300,7 @@ pub extern "C" fn kernel_main(boot_info_ptr: *const BootInfo) -> ! {
     // after this can report failure somewhere observable.
     serial::init();
     serial::write_str("\r\n================================================\r\n");
-    serial::write_str("XyronOS Kernel - Memory Manager subsystem\r\n");
+    serial::write_str("NeoastrenOS Kernel - Memory Manager subsystem\r\n");
     serial::write_str("================================================\r\n");
 
     if boot_info_ptr.is_null() {

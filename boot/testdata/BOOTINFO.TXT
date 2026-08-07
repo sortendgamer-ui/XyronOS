@@ -1,4 +1,4 @@
-XyronOS Bootloader - Phase 2 Part 2 file read test.
+NeoastrenOS Bootloader - Phase 2 Part 2 file read test.
 If you can read this text on the console, the Simple File System
 Protocol pipeline (LoadedImage -> DeviceHandle -> SimpleFileSystem ->
 OpenVolume -> Open -> GetInfo -> AllocatePool -> Read) is working
