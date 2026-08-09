@@ -8,12 +8,13 @@ documentation, never from an existing reference implementation.
 
 Current status: **Phase 2 (Bootloader) complete. Phase 3 (Kernel) in
 progress** — architecture designed, kernel skeleton verified booting,
-physical frame allocator and virtual memory manager (memory manager
-subsystem) implemented, tested, and boot-verified. See
-[ROADMAP.md](ROADMAP.md) for the full phase plan and
-[CHANGELOG.md](CHANGELOG.md) for what has actually landed. Future
-feature requests not yet scheduled are tracked in [TODO.md](TODO.md);
-known non-bug limitations in [TECH_DEBT.md](TECH_DEBT.md).
+**Memory Manager subsystem complete** (physical frame allocator,
+virtual memory manager, kernel heap allocator — all implemented,
+tested, and boot-verified). See [ROADMAP.md](ROADMAP.md) for the full
+phase plan and [CHANGELOG.md](CHANGELOG.md) for what has actually
+landed. Future feature requests not yet scheduled are tracked in
+[TODO.md](TODO.md); known non-bug limitations in
+[TECH_DEBT.md](TECH_DEBT.md).
 
 ## What exists right now
 
@@ -27,17 +28,20 @@ logic, and jumps to the kernel's entry point with a populated
 `BOOT_INFO` handoff struct.
 
 On top of that: a real Rust `no_std` kernel (`kernel/`, Phase 3, in
-progress) that this same bootloader loads and jumps to. It validates
-the `BootInfo` handoff struct, then brings up a physical frame
-allocator (bitmap-based, built from the real UEFI memory map, with
-9 unit tests and a boot-time integration self-test that exercises it
-against this specific boot's real data) before reporting success over
-serial and halting. The virtual memory manager, kernel heap, and
-scheduler are fully designed
-(`docs/kernel/MEMORY_MANAGER_DESIGN.md`,
-`docs/kernel/SCHEDULER_DESIGN.md`) but not yet implemented — see
-`docs/adr/ADR-006-kernel-architecture.md` for the overall kernel
-architecture these build on.
+progress) that this same bootloader loads and jumps to, with a
+**complete Memory Manager subsystem**: it validates the `BootInfo`
+handoff struct, brings up a physical frame allocator (bitmap-based,
+built from the real UEFI memory map), a virtual memory manager
+(4-level page-table walker — `map`/`unmap`/`translate`, reusing the
+bootloader's own page tables), and a real `GlobalAlloc` kernel heap
+(coalescing linked-list allocator, growth-on-demand) — `Box`, `Vec`,
+and the rest of `alloc` are usable throughout the kernel as a result.
+48 unit tests across the three components plus boot-time integration
+self-tests for each (the heap's exercises 100 distinct allocations and
+a 20,000-element `Vec` forcing multiple growth cycles) all pass. The
+scheduler is fully designed (`docs/kernel/SCHEDULER_DESIGN.md`) but
+not yet implemented — see `docs/adr/ADR-006-kernel-architecture.md`
+for the overall kernel architecture these build on.
 
 `tests/kernel_stub` is a separate, minimal C test fixture (explicitly
 **not** Phase 3 work — see that directory's README) used to verify the

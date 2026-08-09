@@ -86,3 +86,12 @@ feature's first commit, rather than requiring a rename later.
   page cannot be verified until a page-fault exception handler exists
   — the very next kernel subsystem. Add this check to that
   subsystem's own boot self-test once it lands.
+- **Kernel heap allocator improvements** — see `TECH_DEBT.md` for full
+  detail: a slab/size-class layer to reduce small-allocation internal
+  fragmentation, and a shrink pass to unmap and return fully-unused
+  heap pages to the physical frame allocator. Both explicitly deferred
+  to Phase 18 (Optimization), matching the frame allocator's own
+  deferred-optimization precedent.
+- **`SpinLock` contention testing** — see `TECH_DEBT.md`. Cannot be
+  meaningfully tested until interrupts and/or the scheduler create any
+  genuine concurrent execution context; revisit once either exists.

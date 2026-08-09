@@ -9,6 +9,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Planned (Phase 3, next subsystem)
 - Interrupts/exceptions: GDT, IDT, exception handlers.
 
+## [v0.5.0] - 2026-08-07
+### Phase 3 (Kernel) — Memory Manager subsystem COMPLETE: kernel heap allocator implemented, tested, and boot-verified.
+### Added
+- `kernel/src/mm/linked_list_allocator.rs` — `LinkedListAllocator`:
+  pure, hardware-independent free-list allocation logic (address-sorted
+  free list with adjacency coalescing on both sides, minimum block size
+  derived from `FreeListNode`'s own layout, first-fit search with
+  front/back gap splitting). 10 unit tests, including three dedicated
+  coalescing tests (two adjacent blocks, order-independence, three
+  adjacent blocks merging into one).
+- `kernel/src/sync/spinlock.rs`, `kernel/src/sync/mod.rs` — `SpinLock`:
+  a minimal atomic compare-exchange spin lock, needed because
+  `#[global_allocator]` and the new `FRAME_ALLOCATOR`/`VMM` globals all
+  require `Sync`. 3 unit tests. New `sync/` module, joining `arch/` and
+  `mm/` — no ADR amendment needed since ADR-006's module layout already
+  anticipates subsystem-driven directories added this way.
+- `kernel/src/mm/heap.rs` — `KernelHeap`: the real `GlobalAlloc`
+  implementation. Growth-on-demand (minimum 16 pages / 64 KiB per
+  growth step, capped at `KERNEL_VIRTUAL_BASE` so the heap region never
+  collides with the kernel's own image), backed by two new kernel-wide
+  globals (`FRAME_ALLOCATOR`, `VMM`) that `kernel_main` populates once
+  their own boot self-tests complete — `FrameAllocator` and
+  `VirtualMemoryManager`'s own code is completely unmodified; only how
+  `kernel_main` stores the already-built instances changes.
+- `#[global_allocator]` registered in `main.rs` — `alloc::{Box, Vec,
+  String, ...}` are now usable throughout the kernel.
+- Boot-time integration self-test (`run_heap_boot_self_test`): a
+  `Box<u64>` round-trip in the correct heap region; 100 small
+  allocations checked pairwise-distinct with intact values; a
+  20,000-element `Vec<u32>` (forcing multiple internal reallocations —
+  proving heap growth works repeatedly, not just once) with a
+  checksum verification; repeated large alloc/free churn proving freed
+  space is actually reused, not just accumulating unbounded growth.
+- Design decisions settled before implementation, per instruction:
+  `docs/kernel/MEMORY_MANAGER_DESIGN.md`'s Kernel Heap Allocator
+  section gained a "Concrete decisions" subsection covering the
+  two-layer split (pure logic vs. hardware-backed growth), the
+  coalescing decision and why a non-coalescing list was rejected (real
+  fragmentation, not just a performance concern), minimum block
+  size/alignment handling, growth chunk sizing, and the
+  `FRAME_ALLOCATOR`/`VMM` globals requirement.
+- `TECH_DEBT.md`: three new entries — leftover alignment/sizing gaps
+  smaller than one block header are permanently lost (accepted,
+  documented limitation of simple linked-list allocators generally);
+  heap growth never shrinks back (pages stay mapped for the kernel's
+  lifetime even once fully freed); `SpinLock` has never been
+  contention-tested (no concurrent execution context exists yet in
+  this kernel to test it against).
+- `TODO.md`: corresponding follow-ups recorded (slab/size-class layer
+  and heap shrink pass, both deferred to Phase 18; SpinLock contention
+  testing, deferred until interrupts/scheduler exist).
+### Verified
+- Real kernel build: zero warnings. Test build: zero warnings.
+- Unit tests: 35/35 passing on host target (up from 21) — 10 new for
+  `LinkedListAllocator`, 3 new for `SpinLock`, 21 prior tests
+  unchanged and still passing.
+- Full boot chain verified end to end under QEMU/OVMF against the
+  **unmodified** Phase 2 bootloader: frame allocator, virtual memory
+  manager, AND kernel heap allocator self-tests all passed in
+  sequence — the Memory Manager subsystem's full, final verification.
+- `boot/` has zero changes this milestone — frozen, no bug found
+  requiring a change. No prior subsystem's own code
+  (`frame_allocator.rs`, `vmm.rs`, `page_table_entry.rs`,
+  `virt_addr.rs`, `phys_addr.rs`) was modified either — only how
+  `kernel_main` stores their already-built instances afterward.
+
 ## [Project Rename] - 2026-08-06
 ### Renamed the project from XyronOS to NeoastrenOS — branding-only, no functional or architectural change.
 No `VERSION` bump: nothing about the system's behavior, build output,

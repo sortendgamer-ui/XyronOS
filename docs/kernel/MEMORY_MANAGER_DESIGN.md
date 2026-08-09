@@ -1,10 +1,9 @@
 # Kernel Memory Manager — Design
 
 Status: **Physical frame allocator implemented and boot-tested
-(`kernel/src/mm/`). Virtual memory manager implemented and boot-tested
-this milestone. Kernel heap: designed, not yet implemented** — see
-ADR-006's initialization order for why it comes later, as its own
-subsystem part.
+(`kernel/src/mm/`). Virtual memory manager implemented and boot-tested.
+Kernel heap allocator implemented and boot-tested this milestone —
+the Memory Manager subsystem is now complete.**
 
 ## Goals
 1. Turn the raw UEFI memory map handed off in `BootInfo`
@@ -181,6 +180,96 @@ principle as the frame allocator's bitmap choice above.
 `#[global_allocator]` is registered once, in `main.rs`, pointing at
 this allocator — after which `alloc::{Box, Vec, String, ...}` become
 usable throughout the kernel.
+
+**Concrete decisions, settled during implementation:**
+
+- **Split into two layers**, matching the testing-split precedent
+  every prior part of this subsystem established: `mm/heap.rs`'s
+  `LinkedListAllocator` is pure free-list logic operating over any
+  `[start, start+size)` byte range it's given — no dependency on the
+  VMM, frame allocator, or real hardware, so it is fully
+  host-unit-tested (a `Vec<u8>`-backed buffer stands in for real
+  mapped memory in tests). `KernelHeap` is the thin `GlobalAlloc`
+  wrapper that adds growth-on-demand (calling the VMM/frame
+  allocator) on top of it — that half needs real hardware and is
+  boot-tested, like `FrameAllocator::init` and the VMM's `map`/`unmap`
+  before it.
+- **Free list is kept sorted by address, with adjacency coalescing on
+  free.** A non-coalescing free list (the simplest possible version)
+  was considered and rejected: without merging adjacent free blocks,
+  memory freed in small pieces can never satisfy a later request
+  larger than any single piece, even when those pieces are physically
+  contiguous — a real, user-visible degradation over time, not merely
+  a performance concern, and exactly the kind of shortcut this
+  project's rules ask to avoid. Coalescing here is a plain
+  address-order check (does this freed block's end equal the next
+  list entry's start, or the previous entry's end equal this block's
+  start?), not a boundary-tag scheme — no extra per-block bookkeeping
+  needed beyond what an address-sorted list already has.
+- **Minimum block size and alignment.** Every block — free or
+  allocated — must be at least `size_of::<FreeListNode>()` bytes and
+  aligned to at least `align_of::<FreeListNode>()`, since a freed
+  block stores its own `FreeListNode` header in its first bytes.
+  `alloc()` rounds every request up to satisfy this before searching
+  the free list; `dealloc()` recomputes the identical rounding from
+  the `Layout` it's given (the same technique `GlobalAlloc`'s API
+  shape already assumes: whatever `Layout` was passed to `alloc` is
+  guaranteed passed back to `dealloc`, so both sides derive the same
+  reserved size independently rather than needing it stored anywhere
+  extra).
+- **Leftover gaps smaller than one block header are lost, not
+  reclaimed — stated plainly, not silently accepted.** Fitting a
+  request into a free block can leave a leftover gap on either side:
+  in front, if the block's raw address isn't already aligned to what
+  the allocation needs; behind, if the block is larger than the
+  request. Either gap, if large enough to hold its own
+  `FreeListNode`, is kept as a new, separate free block — no loss. If
+  smaller than that, there's nowhere valid to record it as free, and
+  those few bytes become permanent internal fragmentation for the
+  lifetime of the heap. This is a well-known, accepted limitation of
+  simple linked-list allocators generally, not specific to this
+  implementation — recorded in `TECH_DEBT.md` rather than glossed
+  over.
+- **Growth chunk size: `max(pages the failing request needs, 16
+  pages)`, rounded up to a whole number of 4 KiB pages.** Mapping
+  exactly one page per growth would work but calls the VMM far more
+  often than necessary for a heap under sustained use; a fixed 64 KiB
+  (16-page) minimum amortizes that cost while staying small enough
+  that a lightly-used kernel doesn't reserve excessive physical memory
+  up front. Growth stops (allocation fails, `alloc()` returns null)
+  if the heap's cursor would cross `KERNEL_VIRTUAL_BASE`
+  (`0xFFFFFFFF80000000`) — the top of the heap region ADR-002 reserves
+  — rather than silently mapping into the kernel image's own address
+  range.
+- **`FRAME_ALLOCATOR` and `VMM` become kernel-wide globals
+  (`SpinLock<Option<T>>`), populated once in `kernel_main` after their
+  existing boot self-tests run using local bindings exactly as
+  before.** This is required because `GlobalAlloc::alloc`/`dealloc`
+  take only `&self` and a `Layout` — there is no parameter through
+  which `kernel_main`'s local `frame_allocator`/`vmm` variables could
+  otherwise reach a global allocator's growth logic. Neither
+  `FrameAllocator` nor `VirtualMemoryManager`'s own code changes at
+  all — their public APIs, internal logic, and every existing unit
+  test are completely unmodified; `kernel_main` only changes how it
+  *stores* the already-built instances afterward. `VirtualMemoryManager::map`'s
+  existing signature (`&mut self, allocator: &mut FrameAllocator, ...`)
+  is used completely unchanged — heap growth locks both globals and
+  passes the already-locked `FrameAllocator` reference straight
+  through, so there is no double-locking or re-entrancy concern.
+- **A minimal spin lock (`kernel/src/sync/spinlock.rs`) is introduced**
+  — required because a `static` (needed for `#[global_allocator]` and
+  the two globals above) must be `Sync`, and this kernel has no
+  OS-provided synchronization primitive to reach for. No real
+  contention exists yet (no interrupts, no second CPU, no scheduler —
+  this kernel runs strictly single-threaded through everything built
+  so far), so this cannot be contention-tested this milestone; it is
+  still implemented correctly (atomic compare-exchange, not a
+  placeholder) because every subsystem after this one (interrupts,
+  the scheduler) will need real mutual exclusion and this is the
+  correct primitive for that, not a stand-in for something better
+  later. `sync/` joins `arch/` and `mm/` in the module tree — ADR-006's
+  module layout already anticipates new subsystem-driven directories
+  being added exactly this way, so no ADR amendment is needed for it.
 
 ## What this document does not cover
 - Per-process address spaces (separate page table sets per process) —

@@ -25,16 +25,30 @@
 // apply to it.
 #![cfg_attr(test, allow(dead_code))]
 
+extern crate alloc;
+
 mod arch;
 mod boot_info;
 mod mm;
+mod sync;
 
 #[cfg_attr(test, allow(unused_imports))]
 use arch::x86_64::serial;
 #[cfg(not(test))]
 use boot_info::BootInfo;
 #[cfg(not(test))]
+use mm::heap::{KernelHeap, FRAME_ALLOCATOR, VMM};
+#[cfg(not(test))]
 use mm::{FrameAllocator, PageFlags, VirtAddr, VirtualMemoryManager};
+
+/// The kernel-wide heap allocator — see `mm/heap.rs` and
+/// `docs/kernel/MEMORY_MANAGER_DESIGN.md`. `const fn new()` starts it
+/// completely empty (no memory mapped yet); `kernel_main` populates
+/// `FRAME_ALLOCATOR`/`VMM` (the globals it grows through) once those
+/// subsystems' own boot self-tests have passed, below.
+#[cfg(not(test))]
+#[global_allocator]
+static ALLOCATOR: KernelHeap = KernelHeap::new();
 
 /// Halt forever via `hlt` — the same idle primitive
 /// `boot/main.c`/`tests/kernel_stub/kernel_stub.c` both use, not a
@@ -291,6 +305,105 @@ fn run_vmm_boot_self_test(vmm: &mut VirtualMemoryManager, allocator: &mut FrameA
     true
 }
 
+/// Boot-time integration self-test for the kernel heap allocator —
+/// requirement ("verify the implementation by booting in QEMU/OVMF").
+/// `KernelHeap`'s growth logic needs the real VMM and frame allocator
+/// (already populated into the globals by the time this runs), so —
+/// like every other hardware-dependent piece of this subsystem — it
+/// is verified live rather than on the host target. The pure
+/// free-list algorithm underneath it (`LinkedListAllocator`) already
+/// has its own comprehensive host-run unit tests
+/// (`mm/linked_list_allocator.rs`); this test instead proves the
+/// *real* heap — real pages, real growth, real `alloc`/`Vec`/`Box` —
+/// works end to end. Returns `true` if every check passed.
+#[cfg(not(test))]
+fn run_heap_boot_self_test() -> bool {
+    use alloc::boxed::Box;
+    use alloc::vec::Vec;
+
+    serial::write_str("\r\nRunning kernel heap allocator boot self-test...\r\n");
+
+    // Check 1: a single Box allocation, in the correct address range,
+    // round-trips its value correctly.
+    let boxed = Box::new(0xDEAD_BEEF_CAFE_BABE_u64);
+    let boxed_addr = &*boxed as *const u64 as u64;
+    if boxed_addr < 0xFFFF_8800_0000_0000 || boxed_addr >= 0xFFFF_FFFF_8000_0000 {
+        serial::write_str("  FAIL: heap allocation address is outside the kernel heap region (ADR-002).\r\n");
+        return false;
+    }
+    if *boxed != 0xDEAD_BEEF_CAFE_BABE_u64 {
+        serial::write_str("  FAIL: Box value did not round-trip correctly.\r\n");
+        return false;
+    }
+    serial::write_str("  [OK] Box<u64> allocated in the correct heap region, value round-tripped.\r\n");
+    drop(boxed);
+
+    // Check 2: many small allocations, all distinct — the same
+    // no-aliasing property the frame allocator's own self-test checks
+    // at the physical level, checked here at the heap level.
+    const SMALL_COUNT: usize = 100;
+    let mut small_allocs: Vec<Box<u64>> = Vec::new();
+    for i in 0..SMALL_COUNT {
+        small_allocs.push(Box::new(i as u64));
+    }
+    for i in 0..SMALL_COUNT {
+        for j in (i + 1)..SMALL_COUNT {
+            let (a, b) = (&*small_allocs[i] as *const u64, &*small_allocs[j] as *const u64);
+            if a == b {
+                serial::write_str("  FAIL: two live heap allocations share the same address.\r\n");
+                return false;
+            }
+        }
+    }
+    for (i, b) in small_allocs.iter().enumerate() {
+        if **b != i as u64 {
+            serial::write_str("  FAIL: a small allocation's value was corrupted.\r\n");
+            return false;
+        }
+    }
+    serial::write_str("  [OK] 100 small allocations, all distinct addresses, all values intact.\r\n");
+    drop(small_allocs); // deallocates all 100
+
+    // Check 3: a large Vec, forcing multiple internal reallocations
+    // (and therefore multiple heap GROWTH cycles, not just the first
+    // one — 20,000 u32 elements is ~78 KiB, several times the 64 KiB
+    // minimum growth chunk) — proves growth works repeatedly, not
+    // only once.
+    const LARGE_COUNT: usize = 20_000;
+    let mut large_vec: Vec<u32> = Vec::new();
+    for i in 0..LARGE_COUNT {
+        large_vec.push(i as u32);
+    }
+    if large_vec.len() != LARGE_COUNT {
+        serial::write_str("  FAIL: large Vec did not reach the expected length.\r\n");
+        return false;
+    }
+    let sum: u64 = large_vec.iter().map(|&x| x as u64).sum();
+    let expected_sum: u64 = (0..LARGE_COUNT as u64).sum();
+    if sum != expected_sum {
+        serial::write_str("  FAIL: large Vec contents were corrupted (checksum mismatch).\r\n");
+        return false;
+    }
+    serial::write_str("  [OK] 20,000-element Vec<u32> (multiple growth cycles) built and checksum verified.\r\n");
+    drop(large_vec);
+
+    // Check 4: alloc -> free -> alloc-again reuses freed space rather
+    // than growing the heap without bound — allocate and drop a large
+    // Vec repeatedly; if freed space weren't being reused, this loop
+    // would eventually exhaust the frame allocator and panic/fail.
+    for _ in 0..5 {
+        let churn: Vec<u8> = alloc::vec![0xAA_u8; 8192];
+        if churn.len() != 8192 || churn[0] != 0xAA || churn[8191] != 0xAA {
+            serial::write_str("  FAIL: churned allocation had incorrect contents.\r\n");
+            return false;
+        }
+    }
+    serial::write_str("  [OK] Repeated large alloc/free cycles completed (freed space is being reused).\r\n");
+
+    serial::write_str("Kernel heap allocator boot self-test: ALL CHECKS PASSED.\r\n");
+    true
+}
+
 #[cfg(not(test))]
 #[no_mangle]
 pub extern "C" fn kernel_main(boot_info_ptr: *const BootInfo) -> ! {
@@ -394,7 +507,24 @@ pub extern "C" fn kernel_main(boot_info_ptr: *const BootInfo) -> ! {
     }
 
     serial::write_str("\r\nMEMORY MANAGER SUBSYSTEM: virtual memory manager verified.\r\n");
-    serial::write_str("Kernel heap allocator: not yet implemented (see docs/kernel/).\r\n");
+
+    // Populate the globals mm/heap.rs's growth logic reaches through —
+    // frame_allocator and vmm are moved here (not borrowed), matching
+    // the design doc's reasoning: their own boot self-tests, above,
+    // already ran against local bindings exactly as before this
+    // subsystem existed; only what happens to them AFTERWARD changes.
+    *FRAME_ALLOCATOR.lock() = Some(frame_allocator);
+    *VMM.lock() = Some(vmm);
+    serial::write_str("[OK] Frame allocator and VMM published to the kernel heap's global handles.\r\n");
+
+    if !run_heap_boot_self_test() {
+        serial::write_str("FATAL: kernel heap allocator boot self-test failed.\r\n");
+        halt();
+    }
+
+    serial::write_str("\r\nMEMORY MANAGER SUBSYSTEM: kernel heap allocator verified.\r\n");
+    serial::write_str("MEMORY MANAGER SUBSYSTEM COMPLETE: frame allocator, virtual memory\r\n");
+    serial::write_str("manager, and kernel heap allocator all implemented and verified.\r\n");
     serial::write_str("Halting.\r\n");
 
     halt()

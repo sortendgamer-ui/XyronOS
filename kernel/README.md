@@ -144,6 +144,17 @@ Running virtual memory manager boot self-test...
 Virtual memory manager boot self-test: ALL CHECKS PASSED.
 
 MEMORY MANAGER SUBSYSTEM: virtual memory manager verified.
-Kernel heap allocator: not yet implemented (see docs/kernel/).
+[OK] Frame allocator and VMM published to the kernel heap's global handles.
+
+Running kernel heap allocator boot self-test...
+  [OK] Box<u64> allocated in the correct heap region, value round-tripped.
+  [OK] 100 small allocations, all distinct addresses, all values intact.
+  [OK] 20,000-element Vec<u32> (multiple growth cycles) built and checksum verified.
+  [OK] Repeated large alloc/free cycles completed (freed space is being reused).
+Kernel heap allocator boot self-test: ALL CHECKS PASSED.
+
+MEMORY MANAGER SUBSYSTEM: kernel heap allocator verified.
+MEMORY MANAGER SUBSYSTEM COMPLETE: frame allocator, virtual memory
+manager, and kernel heap allocator all implemented and verified.
 Halting.
 ```

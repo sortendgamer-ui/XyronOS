@@ -101,3 +101,49 @@ on startup with no output. Both are now scoped correctly (`build-std`
 passed explicitly per-build; `rustflags` scoped under
 `[target.x86_64-os]`) — recorded here as a trap worth knowing about if
 `.cargo/config.toml` is ever restructured again.
+
+## Kernel Heap Allocator (Phase 3)
+
+### Leftover alignment/sizing gaps smaller than one block header are permanently lost
+**Where:** `kernel/src/mm/linked_list_allocator.rs`, `LinkedListAllocator::alloc`.
+
+When a free block is larger than a request (or its start isn't already
+aligned to what the request needs), the leftover space on either side
+is only recoverable as a new free block if it's large enough to hold
+its own `FreeListNode` header. Smaller leftovers become permanent
+internal fragmentation for the lifetime of the heap. This is a
+well-known, accepted property of simple linked-list allocators in
+general (not a defect specific to this implementation) — see
+`docs/kernel/MEMORY_MANAGER_DESIGN.md`'s "Concrete decisions" for the
+full reasoning. Not fixed, because fixing it (e.g. a slab/size-class
+allocator layered on top for small, fixed-size requests) is a real
+allocator redesign, explicitly deferred to Phase 18 (Optimization)
+alongside the frame allocator's own O(n)-scan and bitmap-sizing
+deferrals.
+
+### Heap growth never shrinks back
+**Where:** `kernel/src/mm/heap.rs`, `KernelHeap::grow`.
+
+Once a page is mapped into the heap region, it stays mapped for the
+kernel's lifetime — even if every allocation within it is later freed,
+that page is never unmapped and its frame is never returned to the
+physical frame allocator. For a kernel with no long-running "high
+watermark then quiet" workload yet (nothing generates that pattern
+until much later phases), this has no observed impact, but it is a
+real, permanent limitation as written. A shrink pass (unmap pages
+whose entire range the free list reports as unused) is a legitimate
+future improvement, not implemented speculatively now.
+
+### `SpinLock` has never been contention-tested
+**Where:** `kernel/src/sync/spinlock.rs`.
+
+This kernel runs strictly single-threaded through every subsystem
+built so far (no interrupts enabled, no second CPU brought up, no
+scheduler). `SpinLock`'s unit tests confirm it provides correct
+interior mutability and that a guard's `Drop` releases the lock, but
+none of them — and nothing in the boot self-tests — exercises actual
+concurrent contention (two execution contexts genuinely racing for the
+same lock at the same time), since no such contexts exist yet in this
+kernel. The implementation is a standard, textbook-correct atomic
+spinlock, not a stand-in — but "correct under real contention" remains
+unverified until interrupts and/or the scheduler exist to create any.

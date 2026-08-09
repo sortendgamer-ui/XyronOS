@@ -1,13 +1,14 @@
 //! mm/mod.rs — memory manager subsystem root.
 //!
 //! Per ADR-006's module layout and `docs/kernel/MEMORY_MANAGER_DESIGN.md`:
-//! this subsystem now implements the physical frame allocator and the
-//! virtual memory manager. The kernel heap allocator the design
-//! document also describes is NOT implemented here — per the "do not
-//! proceed to the next kernel subsystem" rule, it is a later addition
-//! to this same module, not scaffolded in advance.
+//! this subsystem now implements the physical frame allocator, the
+//! virtual memory manager, and the kernel heap allocator — the full
+//! Memory Manager subsystem ADR-006 scoped out is complete as of this
+//! module.
 
 pub mod frame_allocator;
+pub mod heap;
+pub mod linked_list_allocator;
 pub mod memory_map;
 pub mod page_table_entry;
 pub mod phys_addr;
