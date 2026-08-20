@@ -9,7 +9,7 @@ the detailed history behind each checkmark.
 |-------|------|--------|
 | 1 | Requirements, Vision, Architecture, Boot/Memory Design | ✅ Complete & frozen |
 | 2 | Bootloader (UEFI, disk loader, boot menu) | ✅ Complete |
-| 3 | Kernel (scheduler, memory manager, interrupts, syscalls, timers) | 🔵 In progress (Memory Manager subsystem complete; interrupts next) |
+| 3 | Kernel (scheduler, memory manager, interrupts, syscalls, timers) | 🔵 In progress (Memory Manager + Interrupts/Exceptions complete; Timer next) |
 | 4 | Device Drivers | ⬜ Not started |
 | 5 | File System | ⬜ Not started |
 | 6 | Networking Stack | ⬜ Not started |
@@ -56,7 +56,13 @@ before it is documented and internally consistent, per project rule.
   boot-time integration self-test (100 distinct small allocations, a
   20,000-element `Vec` forcing multiple growth cycles, alloc/free
   churn proving space reuse). **Memory Manager subsystem complete.**
-- [ ] Interrupts/exceptions — GDT, IDT, exception handlers
+- [x] Interrupts/exceptions — GDT (code/data/TSS with double-fault
+  IST stack), IDT (all 32 CPU exception vectors), macro-generated
+  `extern "x86-interrupt"` handlers with full diagnostic reporting
+  (decoded error codes, `CR2` for page faults). Boot-verified via a
+  deliberate breakpoint (proving the full entry/report/resume path)
+  and a deliberate write to a read-only page (proving `WRITABLE`
+  enforcement — closing a gap open since the VMM milestone).
 - [ ] Timer
 - [ ] Scheduler (`docs/kernel/SCHEDULER_DESIGN.md`)
 - [ ] System calls

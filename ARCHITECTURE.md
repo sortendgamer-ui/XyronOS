@@ -25,10 +25,11 @@ can see how the pieces fit together before diving into individual records.
                               │ ADR-005).
  ┌───────────────────────────▼───────────────────────────────┐
  │  Kernel core (kernel/) — Rust, no_std (ADR-001/ADR-006)    │
- │  Memory Manager subsystem COMPLETE: frame allocator + VMM   │
- │  + kernel heap (GlobalAlloc), tested, boot-verified          │
- │  (kernel/src/mm/). Scheduler, IPC, Syscall dispatch:         │
- │  DESIGNED (docs/kernel/), not yet built.                     │
+ │  Memory Manager (frame alloc + VMM + heap) AND Interrupts/   │
+ │  Exceptions (GDT/IDT/32 handlers) COMPLETE, tested,           │
+ │  boot-verified (kernel/src/mm/, kernel/src/arch/x86_64/).     │
+ │  Timer, Scheduler, IPC, Syscall dispatch: DESIGNED or          │
+ │  planned (docs/kernel/), not yet built.                       │
  │  Higher-half layout per ADR-002                            │
  │        │                                                  │
  │        ▼                                                  │
@@ -99,10 +100,12 @@ can see how the pieces fit together before diving into individual records.
   runs as userland or kernel-adjacent services communicating through the
   syscall/IPC interface defined in Phase 3 — not through shared memory
   hacks or direct function calls across the layer boundary.
-- **`kernel/mm/` and `kernel/sched/`** (not yet implemented) will
-  follow `docs/kernel/MEMORY_MANAGER_DESIGN.md` and
-  `docs/kernel/SCHEDULER_DESIGN.md` respectively — read those before
-  touching either subsystem.
+- **`kernel/mm/`** implements `docs/kernel/MEMORY_MANAGER_DESIGN.md`
+  (complete since v0.5.0). **`kernel/arch/x86_64/{gdt,idt,exceptions}.rs`**
+  implement `docs/kernel/INTERRUPTS_DESIGN.md` (complete since v0.6.0).
+  **`kernel/sched/`** (not yet implemented) will follow
+  `docs/kernel/SCHEDULER_DESIGN.md` — read it before touching that
+  subsystem.
 
 ## Where to look for what
 

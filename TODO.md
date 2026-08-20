@@ -78,14 +78,27 @@ feature's first commit, rather than requiring a rename later.
   `docs/kernel/SCHEDULER_DESIGN.md` explicitly defers this until some
   task actually needs floating point; the kernel target spec disables
   SSE entirely for now so this isn't a silent gap.
-- **Verify hardware enforcement of page permissions (`WRITABLE`/
-  `NO_EXECUTE`).** The virtual memory manager (`kernel/src/mm/vmm.rs`)
-  sets these bits correctly (unit-tested, and boot-verified to be
-  stored correctly via `flags_at()`), but whether the CPU actually
-  traps a write to a non-writable page or execution of a no-execute
-  page cannot be verified until a page-fault exception handler exists
-  — the very next kernel subsystem. Add this check to that
-  subsystem's own boot self-test once it lands.
+- **Verify hardware enforcement of `NO_EXECUTE`.** `WRITABLE`
+  enforcement is now verified (v0.6.0, Interrupts and Exceptions
+  subsystem: a deliberate write to a page mapped `writable: false`
+  produced a real page fault with error code `0x3` — present + write
+  — and `CR2` matching the exact address, decoded and reported
+  correctly by the new exception handlers). `NO_EXECUTE` enforcement
+  (attempting to execute code on a page mapped `no_execute: true`)
+  remains unverified — a natural, low-risk follow-up now that page
+  fault handling exists, not attempted this milestone to keep its
+  self-test focused on GDT/IDT/exception-handling correctness itself.
+- **Verify the double-fault IST stack switch actually engages under a
+  real kernel stack overflow.** `kernel/src/arch/x86_64/gdt.rs`
+  correctly wires up the TSS's IST entry and the double-fault IDT
+  entry's IST index (real code, not a placeholder — see
+  `docs/kernel/INTERRUPTS_DESIGN.md`), but deliberately causing a
+  kernel stack overflow to confirm the CPU really does switch to that
+  dedicated stack rather than faulting again on the overflowed one was
+  not attempted this milestone — safely triggering it without risking
+  corrupting other kernel state (which would make the rest of the
+  self-test's own output unreliable) needs more care than this
+  subsystem's other checks.
 - **Kernel heap allocator improvements** — see `TECH_DEBT.md` for full
   detail: a slab/size-class layer to reduce small-allocation internal
   fragmentation, and a shrink pass to unmap and return fully-unused

@@ -156,5 +156,42 @@ Kernel heap allocator boot self-test: ALL CHECKS PASSED.
 MEMORY MANAGER SUBSYSTEM: kernel heap allocator verified.
 MEMORY MANAGER SUBSYSTEM COMPLETE: frame allocator, virtual memory
 manager, and kernel heap allocator all implemented and verified.
-Halting.
+
+[OK] GDT loaded (kernel code/data segments, TSS with double-fault IST stack).
+[OK] IDT loaded (all 32 CPU exception vectors installed).
+
+Running interrupts/exceptions boot self-test...
+  Triggering INT3 (breakpoint)...
+
+!!! CPU EXCEPTION !!!
+Vector: 0x0000000000000003 (Breakpoint (#BP))
+RIP: 0x...  CS: 0x0000000000000008
+RFLAGS: 0x...
+RSP: 0x...  SS: 0x0000000000000010
+(Breakpoint — resuming execution.)
+  [OK] Execution resumed correctly after the breakpoint handler returned.
+
+Interrupts/exceptions boot self-test (non-fatal path): PASSED.
+INTERRUPTS AND EXCEPTIONS SUBSYSTEM: GDT, IDT, and breakpoint
+(non-fatal exception) round-trip all verified.
+
+Mapping a read-only test page, then deliberately writing to it
+to verify WRITABLE=false is actually enforced by the CPU
+(closing a gap left unverified since the VMM milestone).
+(The kernel will halt via the page fault handler — this is expected.)
+
+!!! CPU EXCEPTION !!!
+Vector: 0x000000000000000E (Page Fault (#PF))
+Error code: 0x0000000000000003
+  Cause: protection violation (page present), write, supervisor-mode
+CR2 (faulting address): 0xFFFF880010000000
+RIP: 0x...  CS: 0x0000000000000008
+RFLAGS: 0x...
+RSP: 0x...  SS: 0x0000000000000010
+Kernel halted.
 ```
+
+This halt is the correct, expected end of the current boot sequence —
+not a failure. Interrupts/Exceptions is the last subsystem implemented
+so far; see `docs/kernel/SCHEDULER_DESIGN.md` and `ROADMAP.md` for
+what comes next (Timer, then Scheduler).

@@ -7,7 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 ### Planned (Phase 3, next subsystem)
-- Interrupts/exceptions: GDT, IDT, exception handlers.
+- Timer: PIC/APIC bring-up, hardware IRQ handling, `sti`/`cli`.
+
+## [v0.6.0] - 2026-08-09
+### Phase 3 (Kernel) — Interrupts and Exceptions subsystem COMPLETE: GDT, IDT, and all 32 CPU exception handlers implemented, tested, and boot-verified.
+### Added
+- `docs/kernel/INTERRUPTS_DESIGN.md` — full design written before
+  implementation, per instruction: GDT layout (null/code/data/TSS),
+  why a TSS with no ring-3 code yet (the IST — Interrupt Stack Table —
+  for a dedicated double-fault stack), the complete 32-vector
+  exception table (name + error-code presence for every vector, from
+  the architecture's own specification), diagnostic reporting
+  contents, the panic policy's one exception (breakpoint returns
+  instead of halting), initialization order, and testing strategy.
+- `kernel/src/arch/x86_64/gdt.rs` — kernel code/data segment
+  descriptors, a TSS with one configured IST entry (double-fault's
+  dedicated 16 KiB stack), the long-mode far-return trick needed to
+  reload `CS` (no direct way to `mov cs`), and `ltr`.
+- `kernel/src/arch/x86_64/idt.rs` — the 256-entry IDT structure and
+  `lidt` loading; vectors 32-255 deliberately left present-bit-clear
+  (a well-defined CPU fault if ever hit, not undefined behavior)
+  since only 0-31 are this subsystem's concern.
+- `kernel/src/arch/x86_64/exceptions.rs` — all 32 CPU exception
+  handlers (`extern "x86-interrupt"`, macro-generated per-vector to
+  avoid hand-duplicating 32 near-identical functions while keeping
+  each one real and distinctly typed), correct error-code-vs-no-error-
+  code signatures per vector, page-fault error-code bit decoding
+  (present/write/user/reserved/instruction-fetch) and `CR2` reporting.
+- `#![feature(abi_x86_interrupt)]` enabled at the crate root.
+- Boot-time integration self-test: breakpoint (`int3`) triggered
+  deliberately, proving entry, diagnostic reporting, AND the
+  `iretq`-based return-and-resume path all work (execution continues
+  normally afterward); then, as the subsystem's final and most
+  conclusive check, a page deliberately mapped `writable: false` is
+  written to, producing a real page fault whose decoded error code
+  (`0x3` = present + write) and `CR2` (matching the exact address)
+  prove `PageFlags::writable` is not just stored correctly (already
+  known since v0.4.0) but genuinely *enforced* by the CPU — closing a
+  gap explicitly left open and tracked in `TODO.md` since the virtual
+  memory manager milestone.
+- `TODO.md`: the `WRITABLE`-enforcement item marked resolved (with
+  the exact evidence); two new follow-ups recorded — `NO_EXECUTE`
+  enforcement (same idea, not attempted this milestone to keep the
+  self-test focused), and confirming the double-fault IST stack
+  switch actually engages under a real kernel stack overflow (real,
+  correct code either way — this is about testing it under the one
+  scenario it exists for, which needs more care to trigger safely
+  than this subsystem's other checks).
+### Verified
+- Real kernel build: zero warnings. Test build: zero warnings.
+- Unit tests: 35/35 passing, unchanged from v0.5.0 — no new unit
+  tests this milestone (GDT/IDT/TSS setup is inherently real-CPU
+  privileged state with no meaningful host-testable behavior, exactly
+  like every other hardware-facing piece of this kernel; verified via
+  the boot self-test instead, per the same established precedent).
+- Full boot chain verified end to end under QEMU/OVMF against the
+  **unmodified** Phase 2 bootloader and **unmodified** Memory Manager
+  subsystem: every prior self-test (frame allocator, VMM, heap) still
+  passes exactly as before, followed by GDT/IDT bring-up, the
+  breakpoint round-trip, and the concluding deliberate page fault —
+  whose reported `CS: 0x08`/`SS: 0x10` (the kernel's own new GDT
+  selectors, not leftover firmware values) is itself independent
+  confirmation the segment reload actually took effect.
+- `boot/` has zero changes this milestone — frozen, no bug found
+  requiring a change. No completed kernel subsystem's own code
+  (`mm/*`, `sync/*`) was modified either.
 
 ## [v0.5.0] - 2026-08-07
 ### Phase 3 (Kernel) — Memory Manager subsystem COMPLETE: kernel heap allocator implemented, tested, and boot-verified.

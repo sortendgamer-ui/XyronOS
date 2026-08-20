@@ -16,6 +16,11 @@
 
 #![cfg_attr(not(test), no_std)]
 #![cfg_attr(not(test), no_main)]
+// Unstable ABI needed by arch/x86_64/exceptions.rs's handler
+// functions — already acceptable in this codebase, which builds via
+// RUSTC_BOOTSTRAP=1/nightly throughout (see kernel/README.md and
+// docs/kernel/INTERRUPTS_DESIGN.md).
+#![feature(abi_x86_interrupt)]
 // Under `cfg(test)`, kernel_main and everything it calls are cfg'd
 // out (see below), which leaves most of mm/'s public API legitimately
 // unreachable from unit tests alone — they exercise the bitmap logic
@@ -525,7 +530,113 @@ pub extern "C" fn kernel_main(boot_info_ptr: *const BootInfo) -> ! {
     serial::write_str("\r\nMEMORY MANAGER SUBSYSTEM: kernel heap allocator verified.\r\n");
     serial::write_str("MEMORY MANAGER SUBSYSTEM COMPLETE: frame allocator, virtual memory\r\n");
     serial::write_str("manager, and kernel heap allocator all implemented and verified.\r\n");
-    serial::write_str("Halting.\r\n");
 
-    halt()
+    // Step 4 (ADR-006 boot flow): GDT/IDT and exception handling.
+    // GDT must be initialized before IDT — IDT entries reference the
+    // kernel code selector GDT::init establishes. See
+    // docs/kernel/INTERRUPTS_DESIGN.md's initialization order.
+    //
+    // SAFETY: called exactly once, here, with the kernel still
+    // strictly single-threaded (no scheduler, no second CPU brought
+    // up yet).
+    unsafe {
+        arch::x86_64::gdt::init();
+    }
+    serial::write_str("\r\n[OK] GDT loaded (kernel code/data segments, TSS with double-fault IST stack).\r\n");
+
+    // SAFETY: gdt::init() has already run, immediately above.
+    unsafe {
+        arch::x86_64::idt::init();
+    }
+    serial::write_str("[OK] IDT loaded (all 32 CPU exception vectors installed).\r\n");
+
+    run_interrupts_boot_self_test();
+    // Unreachable: the self-test's final act is a deliberate page
+    // fault, whose handler halts per ADR-006's panic policy — see
+    // run_interrupts_boot_self_test's own doc comment.
+}
+
+/// Boot-time integration self-test for the Interrupts and Exceptions
+/// subsystem — see `docs/kernel/INTERRUPTS_DESIGN.md`'s "Testing
+/// strategy" for why this subsystem, like every hardware-facing piece
+/// of `mm/` before it, is verified live rather than on the host
+/// target, and for the full reasoning behind deliberately triggering
+/// two real exceptions rather than merely asserting the IDT loaded.
+///
+/// Never returns: its final act is a deliberate page fault, and
+/// ADR-006's panic policy halts after any fault except breakpoint.
+/// That halt, with the page-fault handler's own correct diagnostic
+/// output immediately preceding it, IS this test's proof that the
+/// fatal-exception path works — not a failure to reach a "success"
+/// message.
+#[cfg(not(test))]
+fn run_interrupts_boot_self_test() -> ! {
+    serial::write_str("\r\nRunning interrupts/exceptions boot self-test...\r\n");
+
+    // Check 1: breakpoint (int3) — proves entry, diagnostic
+    // reporting, AND the iretq-based return-and-resume path all work,
+    // since execution must continue past this point for the next
+    // line to print at all.
+    serial::write_str("  Triggering INT3 (breakpoint)...\r\n");
+    unsafe {
+        core::arch::asm!("int3", options(nomem, nostack));
+    }
+    serial::write_str("  [OK] Execution resumed correctly after the breakpoint handler returned.\r\n");
+
+    serial::write_str("\r\nInterrupts/exceptions boot self-test (non-fatal path): PASSED.\r\n");
+    serial::write_str("INTERRUPTS AND EXCEPTIONS SUBSYSTEM: GDT, IDT, and breakpoint\r\n");
+    serial::write_str("(non-fatal exception) round-trip all verified.\r\n");
+
+    // Check 2: a genuine page fault, triggered by writing to a page
+    // deliberately mapped READ-ONLY. This closes a gap
+    // docs/kernel/MEMORY_MANAGER_DESIGN.md and TODO.md explicitly
+    // flagged as unverified when the VMM was built (v0.4.0): that
+    // PageFlags::writable = false is not just stored correctly
+    // (already proven then, via flags_at()) but actually ENFORCED by
+    // the CPU. Deliberately triggered as the LAST act of this
+    // self-test, since its handler halts per the panic policy — the
+    // decoded error code (present + write) and CR2 (matching this
+    // exact address) are themselves the proof; the halt that follows
+    // is the expected, correct end state, not a failure.
+    serial::write_str("\r\nMapping a read-only test page, then deliberately writing to it\r\n");
+    serial::write_str("to verify WRITABLE=false is actually enforced by the CPU\r\n");
+    serial::write_str("(closing a gap left unverified since the VMM milestone).\r\n");
+    serial::write_str("(The kernel will halt via the page fault handler — this is expected.)\r\n");
+
+    const READONLY_TEST_VADDR: u64 = 0xFFFF_8800_1000_0000;
+    {
+        let mut frame_guard = FRAME_ALLOCATOR.lock();
+        let mut vmm_guard = VMM.lock();
+        let frame_allocator = frame_guard.as_mut().expect("frame allocator global not populated");
+        let vmm = vmm_guard.as_mut().expect("VMM global not populated");
+        let test_frame = frame_allocator
+            .allocate()
+            .expect("frame allocator exhausted before the read-only page test could run");
+        let readonly_flags = PageFlags {
+            writable: false,
+            no_execute: false,
+        };
+        vmm.map(frame_allocator, VirtAddr::new(READONLY_TEST_VADDR), test_frame, readonly_flags)
+            .expect("map() of the read-only test page failed");
+    }
+    // Locks released here — must not still be held when the page
+    // fault below fires and its handler halts, since a held SpinLock
+    // left locked forever is otherwise harmless (nothing after this
+    // point ever runs), but releasing it first keeps this block
+    // correct by construction rather than by accident.
+
+    // SAFETY: this is intentionally unsound — the entire point is to
+    // write to a page just mapped read-only, on purpose, as this
+    // subsystem's own final, most conclusive self-test.
+    unsafe {
+        core::ptr::write_volatile(READONLY_TEST_VADDR as *mut u8, 0xFF);
+    }
+
+    // Unreachable: the write above transfers control to handler_14
+    // (exceptions.rs), which halts.
+    loop {
+        unsafe {
+            core::arch::asm!("hlt", options(nomem, nostack));
+        }
+    }
 }
